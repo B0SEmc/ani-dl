@@ -1,0 +1,10 @@
+[package]
+name = "ani-dl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { version = "*", features = ["derive"] }
+serde_json = "*"
+inquire = "*"
+colored = "*"
