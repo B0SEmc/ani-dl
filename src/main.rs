@@ -70,7 +70,7 @@ fn main() {
 
     let ans4 = Select::new("Voulez-vous télécharger ou regarder l'anime ?", options).prompt();
 
-    if ans4.unwrap() == "télécharger" {
+    if ans4.unwrap() == "Télécharger" {
         download(ans3.episodes);
     } else {
         let mut episode_numbers = vec![];
