@@ -1,49 +1,9 @@
-use colored::*;
+use crate::anime::*;
 use inquire::*;
-use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter};
+use spinners::{Spinner, Spinners};
 use std::thread;
 
-// {
-//   "anime": [
-//     {
-//       "name": "2.43-seiin-koukou-danshi-volley-bu",
-//       "lang": "vostfr",
-//       "season": 1,
-//       "episodes": [
-//         "https://video.sibnet.ru/shell.php?videoid=4206093",
-//         "https://video.sibnet.ru/shell.php?videoid=4209756"
-//       ]
-//     },
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Animes {
-    anime: Vec<Anime>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-struct Anime {
-    name: String,
-    lang: String,
-    season: u8,
-    episodes: Vec<String>,
-}
-
-impl Display for Anime {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if self.season > 1 {
-            write!(
-                f,
-                "{} saison {} ({})",
-                self.name.blue(),
-                self.season.to_string().yellow(),
-                self.lang.green()
-            )
-        } else {
-            write!(f, "{} ({})", self.name.blue(), self.lang.green())
-        }
-    }
-}
+mod anime;
 
 fn download(episodes: Vec<String>) {
     if episodes.len() > 50 {
@@ -70,23 +30,56 @@ fn download(episodes: Vec<String>) {
     }
 }
 
+fn watch(link: &str) {
+    let output = std::process::Command::new("mpv")
+        .arg(link)
+        .output()
+        .expect("Failed to execute command");
+    println!("{}", String::from_utf8_lossy(&output.stdout));
+}
+
 fn main() {
+    let mut sp = Spinner::new(Spinners::FingerDance, String::from("Chargement des animes"));
+
     let file = std::fs::File::open("anime_data.json").unwrap();
     let animes: Animes = serde_json::from_reader(file).unwrap();
+    let animes = animes.pretty_names();
 
-    let ans: Result<Anime, InquireError> =
-        Select::new("Sélectionnez les animes: ", animes.anime).prompt();
+    sp.stop_with_symbol("  ");
 
-    let choice = ans.unwrap();
+    let ans = Select::new("Sélectionnez les animes: ", animes.get_name())
+        .prompt()
+        .unwrap();
 
-    let ans2 = Confirm::new("Voulez-vous télécharger les épisodes?")
-        .with_help_message("A supprimer pour la release")
-        .with_default(false)
-        .prompt();
+    let animes2 = animes.get_seasons_from_str(&ans);
 
-    if ans2.unwrap() {
-        download(choice.episodes);
+    let ans2 = Select::new("VF ou VOSTFR?", vec!["VF", "VOSTFR"])
+        .prompt()
+        .unwrap();
+
+    let animes3: Vec<Anime> = animes2
+        .into_iter()
+        .filter(|x| x.lang == ans2.to_lowercase())
+        .collect();
+
+    let ans3 = Select::new("Sélectionnez la saison: ", animes3)
+        .prompt()
+        .unwrap();
+
+    let options = vec!["Télécharger", "Regarder"];
+
+    let ans4 = Select::new("Voulez-vous télécharger ou regarder l'anime ?", options).prompt();
+
+    if ans4.unwrap() == "télécharger" {
+        download(ans3.episodes);
     } else {
-        dbg!(&choice.episodes);
+        let mut episode_numbers = vec![];
+        for i in 1..=ans3.episodes.len() {
+            episode_numbers.push(i);
+        }
+        let ans5 = Select::new("Sélectionnez l'épisode: ", episode_numbers)
+            .prompt()
+            .unwrap();
+        watch(&ans3.episodes[ans5 - 1]);
     }
 }
