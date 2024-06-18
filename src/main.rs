@@ -1,9 +1,12 @@
 use crate::anime::*;
+use data::get_file;
 use inquire::*;
 use spinners::{Spinner, Spinners};
+use std::path::Path;
 use std::thread;
 
 mod anime;
+mod data;
 
 fn download(episodes: Vec<String>) {
     if episodes.len() > 50 {
@@ -39,6 +42,11 @@ fn watch(link: &str) {
 }
 
 fn main() {
+    if !Path::new("anime_data.json").exists() {
+        println!("Téléchargement de la dernière version des données...");
+        get_file()
+    }
+
     let mut sp = Spinner::new(Spinners::FingerDance, String::from("Chargement des animes"));
 
     let file = std::fs::File::open("anime_data.json").unwrap();
@@ -53,9 +61,24 @@ fn main() {
 
     let animes2 = animes.get_seasons_from_str(&ans);
 
-    let ans2 = Select::new("VF ou VOSTFR?", vec!["VF", "VOSTFR"])
-        .prompt()
-        .unwrap();
+    let mut vf = false;
+
+    for anime in &animes2 {
+        if anime.lang == "vf" {
+            vf = true;
+            break;
+        }
+    }
+
+    let mut ans2 = "vostfr";
+
+    if vf {
+        ans2 = Select::new("VF ou VOSTFR?", vec!["VF", "VOSTFR"])
+            .prompt()
+            .unwrap();
+    } else {
+        println!("Pas de version française disponible");
+    }
 
     let animes3: Vec<Anime> = animes2
         .into_iter()

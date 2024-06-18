@@ -10,3 +10,4 @@ inquire = "*"
 colored = "*"
 spinners = "*"
 titlecase = "*"
+reqwest = { version = "*", features = ["blocking"] }
