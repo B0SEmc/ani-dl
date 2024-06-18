@@ -13,7 +13,7 @@ dependencies = [
 
 [[package]]
 name = "ani-dl"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "colored",
  "inquire",
