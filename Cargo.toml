@@ -2,6 +2,10 @@
 name = "ani-dl"
 version = "1.0.0"
 edition = "2021"
+license-file = "LICENSE"
+description = "Download and watch animes in VF and VOSTFR (aka french versions)"
+repository = "https://github.com/B0SEmc/ani-dl"
+readme = "README.md"
 
 [dependencies]
 serde = { version = "*", features = ["derive"] }
