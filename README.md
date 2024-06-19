@@ -9,9 +9,9 @@
 
 # Installation
 
-### Cargo
 <details>
   <summary>Cargo</summary>
+  
   ```bash
   cargo install ani-dl
   ```
