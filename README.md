@@ -9,7 +9,12 @@
 
 # Installation
 
-Will be added to repositories soon, [Build](#Build) it yourself for now.
+### Cargo
+<details>
+  <summary>Cargo</summary>
+  ```bash
+  cargo install ani-dl
+  ```
 
 # Build
 ```bash
