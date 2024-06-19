@@ -8,10 +8,10 @@ repository = "https://github.com/B0SEmc/ani-dl"
 readme = "README.md"
 
 [dependencies]
-serde = { version = "*", features = ["derive"] }
-serde_json = "*"
-inquire = "*"
-colored = "*"
-spinners = "*"
-titlecase = "*"
-reqwest = { version = "*", features = ["blocking"] }
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+inquire = "0.7.5"
+colored = "2.1.0"
+spinners = "4.1.1"
+titlecase = "3.2.0"
+reqwest = { version = "0.12.5", features = ["blocking"] }
