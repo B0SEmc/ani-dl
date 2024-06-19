@@ -50,21 +50,8 @@ fn main() {
     let mut sp = Spinner::new(Spinners::FingerDance, String::from("Chargement des animes"));
 
     let file = std::fs::File::open("anime_data.json").unwrap();
-    let films: Films = serde_json::from_reader(&file).unwrap();
-    let file = std::fs::File::open("anime_data.json").unwrap();
     let animes: Animes = serde_json::from_reader(file).unwrap();
-    let mut animes: Animes = animes.pretty_names();
-    let films: Films = films.pretty_names();
-
-    for film in films.film {
-        let anime = Anime {
-            name: film.name,
-            lang: film.lang,
-            season: 0,
-            episodes: film.episodes,
-        };
-        animes.anime.push(anime);
-    }
+    let animes = animes.pretty_names();
 
     sp.stop_with_symbol("  ");
 
