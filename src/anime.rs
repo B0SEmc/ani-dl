@@ -4,15 +4,28 @@ use std::fmt::{Display, Formatter};
 use titlecase::titlecase;
 
 #[derive(Serialize, Deserialize, Debug)]
+pub struct Films {
+    pub film: Vec<Film>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct Film {
+    pub name: String,
+    pub lang: String,
+    pub episodes: Vec<String>,
+    pub season: i8,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Animes {
     pub anime: Vec<Anime>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Anime {
-    name: String,
+    pub name: String,
     pub lang: String,
-    season: i8,
+    pub season: i8,
     pub episodes: Vec<String>,
 }
 
@@ -46,5 +59,14 @@ impl Animes {
             }
         }
         seasons
+    }
+}
+
+impl Films {
+    pub fn pretty_names(mut self) -> Self {
+        for film in &mut self.film {
+            film.name = titlecase(&film.name.replace('-', " "));
+        }
+        self
     }
 }
