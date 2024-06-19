@@ -4,7 +4,7 @@
 
 # Dependencies
 
-[yt-dlp](github.com/yt-dlp/yt-dlp)
+[yt-dlp](https://github.com/yt-dlp/yt-dlp)
 [mpv](https://mpv.io/)
 
 # Installation
