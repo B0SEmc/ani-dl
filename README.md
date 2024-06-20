@@ -10,6 +10,21 @@
 # Installation
 
 <details>
+  <summary>Arch (AUR)</summary>
+  
+  ```bash
+  yay -S ani-dl
+  ```
+</details>
+<details>
+  <summary>Scoop (Windows)</summary>
+  
+  ```bash
+  scoop bucket add sendus https://github.com/S3nda/Sendus
+  scoop install ani-dl
+  ```
+</details>
+<details>
   <summary>Cargo</summary>
   
   ```bash
