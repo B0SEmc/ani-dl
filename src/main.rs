@@ -1,8 +1,8 @@
 use crate::anime::*;
 use data::get_file;
+use directories::ProjectDirs;
 use inquire::*;
 use spinners::{Spinner, Spinners};
-use std::path::Path;
 use std::thread;
 
 mod anime;
@@ -42,14 +42,16 @@ fn watch(link: &str) {
 }
 
 fn main() {
-    if !Path::new("anime_data.json").exists() {
-        println!("Téléchargement de la dernière version des données...");
-        get_file()
-    }
+    let file_path = ProjectDirs::from("", "B0SE", "ani-dl")
+        .expect("Failed to get project directory")
+        .data_dir()
+        .join("anime_data.json");
+
+    get_file();
 
     let mut sp = Spinner::new(Spinners::FingerDance, String::from("Chargement des animes"));
 
-    let file = std::fs::File::open("anime_data.json").unwrap();
+    let file = std::fs::File::open(file_path).unwrap();
     let animes: Animes = serde_json::from_reader(file).unwrap();
     let animes = animes.pretty_names();
 
