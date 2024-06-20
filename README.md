@@ -10,6 +10,13 @@
 # Installation
 
 <details>
+  <summary>Arch (AUR)</summary>
+  
+  ```bash
+  yay -S ani-dl
+  ```
+</details>
+<details>
   <summary>Cargo</summary>
   
   ```bash
