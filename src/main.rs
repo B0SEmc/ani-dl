@@ -3,34 +3,29 @@ use data::get_file;
 use directories::ProjectDirs;
 use inquire::*;
 use spinners::{Spinner, Spinners};
-use std::thread;
+use threadpool::ThreadPool;
 
 mod anime;
 mod data;
 
 fn download(episodes: Vec<String>) {
-    if episodes.len() > 50 {
-        println!("Trop d'épisodes à télécharger, ouvrez une issue sur github");
-        return;
-    }
-    let mut handles = vec![];
+    let pool = ThreadPool::new(12);
 
-    for episode in episodes {
-        let handle = thread::spawn(move || {
-            println!("Downloading: {}", episode);
-            let output = std::process::Command::new("yt-dlp")
-                .arg(episode)
-                .output()
-                .expect("Failed to execute command");
-            println!("{}", String::from_utf8_lossy(&output.stdout));
-        });
-
-        handles.push(handle);
+    for chunk in episodes.chunks(12) {
+        for episode in chunk {
+            let episode = episode.clone();
+            pool.execute(move || {
+                let output = std::process::Command::new("yt-dlp")
+                    .arg(&episode)
+                    .output()
+                    .expect("Failed to execute command");
+                println!("Downloaded: {}", &episode);
+                println!("{}", String::from_utf8_lossy(&output.stdout));
+            });
+        }
     }
 
-    for handle in handles {
-        handle.join().unwrap();
-    }
+    pool.join();
 }
 
 fn watch(link: &str) {
