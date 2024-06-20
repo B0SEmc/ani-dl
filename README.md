@@ -15,6 +15,7 @@
   ```bash
   cargo install ani-dl
   ```
+</details>
 
 # Build
 ```bash
