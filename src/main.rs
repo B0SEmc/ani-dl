@@ -9,27 +9,24 @@ mod anime;
 mod data;
 
 fn download(episodes: Vec<String>) {
-    if episodes.len() > 50 {
-        println!("Trop d'épisodes à télécharger, ouvrez une issue sur github");
-        return;
-    }
-    let mut handles = vec![];
-
-    for episode in episodes {
-        let handle = thread::spawn(move || {
-            println!("Downloading: {}", episode);
-            let output = std::process::Command::new("yt-dlp")
-                .arg(episode)
-                .output()
-                .expect("Failed to execute command");
-            println!("{}", String::from_utf8_lossy(&output.stdout));
+    for chunk in episodes.chunks(12) {
+        let mut handles = vec![];
+        for episode in chunk {
+            let handle = thread::spawn(move || {
+                println!("Downloading: {}", episode);
+                let output = std::process::Command::new("yt-dlp")
+                    .arg(episode)
+                    .output()
+                    .expect("Failed to execute command");
+                println!("{}", String::from_utf8_lossy(&output.stdout));
         });
 
         handles.push(handle);
     }
 
-    for handle in handles {
-        handle.join().unwrap();
+        for handle in handles {
+            handle.join().unwrap();
+        }
     }
 }
 
