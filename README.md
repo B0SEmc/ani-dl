@@ -1,13 +1,22 @@
-# Demo
+## Table of Contents
+
+- [Install](#install)
+  - [From Repos](#installation)
+  - [From Source](#build)
+- [Dependencies](#dependencies)
+- [Disclaimer](./disclaimer.md)
+- [Thanks](#thanks)
+
+## Demo
 
 [![asciicast](https://github.com/B0SEmc/ani-dl/raw/master/demo.svg)](https://asciinema.org/a/tk9KzxVeL42SZaKQ32i3oQQ58)
 
-# Dependencies
+## Dependencies
 
 [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 [mpv](https://mpv.io/)
 
-# Installation
+## Installation
 
 <details>
   <summary>Arch (AUR)</summary>
@@ -32,12 +41,13 @@
   ```
 </details>
 
-# Build
+## Build
 ```bash
 git clone https://github.com/B0SEmc/ani-dl.git
 cd ani-dl
 cargo build --release
 ```
-# Thanks
+## Thanks
 
-Thanks to [@S3nda](https://github.com/S3nda) for making the scraper (private).
+[ani-cli](https://github.com/pystardust/ani-cli) for the inspiration and their disclaimer
+[@S3nda](https://github.com/S3nda) for making the scraper (private).
