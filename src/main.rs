@@ -3,12 +3,18 @@ use data::get_file;
 use directories::ProjectDirs;
 use inquire::*;
 use spinners::{Spinner, Spinners};
+use std::path::PathBuf;
 use threadpool::ThreadPool;
 
 mod anime;
 mod data;
 
-fn download(episodes: Vec<String>) {
+fn download(episodes: Vec<String>, name: &str) {
+    match PathBuf::from(name).exists() {
+        true => (),
+        false => std::fs::create_dir(name).unwrap(),
+    }
+    std::env::set_current_dir(name).unwrap();
     let pool = ThreadPool::new(12);
 
     for chunk in episodes.chunks(12) {
@@ -17,10 +23,13 @@ fn download(episodes: Vec<String>) {
             pool.execute(move || {
                 let output = std::process::Command::new("yt-dlp")
                     .arg(&episode)
-                    .output()
+                    .status()
                     .expect("Failed to execute command");
-                println!("Downloaded: {}", &episode);
-                println!("{}", String::from_utf8_lossy(&output.stdout));
+                if output.success() {
+                    println!("Téléchargement de {} terminé", episode);
+                } else {
+                    println!("Échec du téléchargement de {}", episode);
+                }
             });
         }
     }
@@ -91,7 +100,7 @@ fn main() {
     let ans4 = Select::new("Voulez-vous télécharger ou regarder l'anime ?", options).prompt();
 
     if ans4.unwrap() == "Télécharger" {
-        download(ans3.episodes);
+        download(ans3.episodes, &ans3.name);
     } else {
         let mut episode_numbers = vec![];
         for i in 1..=ans3.episodes.len() {
