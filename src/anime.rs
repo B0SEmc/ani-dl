@@ -10,7 +10,7 @@ pub struct Animes {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Anime {
-    name: String,
+    pub name: String,
     pub lang: String,
     season: i8,
     pub episodes: Vec<String>,
