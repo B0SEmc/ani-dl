@@ -19,7 +19,7 @@
 ## Installation
 
 <details>
-  <summary>Arch (AUR)</summary>
+  <summary>Arch Linux (AUR)</summary>
   
   ```bash
   yay -S ani-dl
