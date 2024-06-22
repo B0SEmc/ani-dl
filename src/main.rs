@@ -4,7 +4,7 @@ use directories::ProjectDirs;
 use inquire::*;
 use spinners::{Spinner, Spinners};
 use std::path::PathBuf;
-use threadpool::ThreadPool;
+use std::time::Duration;
 
 mod anime;
 mod data;
@@ -15,26 +15,19 @@ fn download(episodes: Vec<String>, name: &str) {
         false => std::fs::create_dir(name).unwrap(),
     }
     std::env::set_current_dir(name).unwrap();
-    let pool = ThreadPool::new(12);
-
-    for chunk in episodes.chunks(12) {
-        for episode in chunk {
-            let episode = episode.clone();
-            pool.execute(move || {
-                let output = std::process::Command::new("yt-dlp")
-                    .arg(&episode)
-                    .status()
-                    .expect("Failed to execute command");
-                if output.success() {
-                    println!("Téléchargement de {} terminé", episode);
-                } else {
-                    println!("Échec du téléchargement de {}", episode);
-                }
-            });
-        }
+    for episode in episodes {
+    let output = std::process::Command::new("yt-dlp")
+        .arg(&episode)
+        .status()
+        .expect("Failed to execute command");
+    
+    if output.success() {
+        println!("Téléchargement de {} terminé", episode);
+    } else {
+        println!("Échec du téléchargement de {}", episode);
     }
-
-    pool.join();
+    thread::sleep(Duration::from_secs(1));
+}
 }
 
 fn watch(link: &str) {
