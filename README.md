@@ -29,6 +29,7 @@
   <summary>Scoop (Windows)</summary>
   
   ```bash
+  scoop bucket add extras
   scoop bucket add sendus https://github.com/S3nda/Sendus
   scoop install ani-dl
   ```
