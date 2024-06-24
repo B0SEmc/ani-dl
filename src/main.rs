@@ -56,7 +56,7 @@ fn main() {
     let mut sp = Spinner::new(Spinners::FingerDance, String::from("Chargement des animes"));
 
     let file = std::fs::File::open(file_path).unwrap();
-    let animes: Animes = serde_json::from_reader(file).unwrap();
+    let animes: Medias = serde_json::from_reader(file).unwrap();
     let animes = animes.pretty_names();
 
     sp.stop_with_symbol("  ");
@@ -86,7 +86,7 @@ fn main() {
         println!("Pas de version française disponible");
     }
 
-    let animes3: Vec<Anime> = animes2
+    let animes3: Vec<Media> = animes2
         .into_iter()
         .filter(|x| x.lang == ans2.to_lowercase())
         .collect();
