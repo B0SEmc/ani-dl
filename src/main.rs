@@ -51,12 +51,21 @@ fn main() {
         .data_dir()
         .join("anime_data.json");
 
-    get_file();
+    get_file(false);
 
     let mut sp = Spinner::new(Spinners::FingerDance, String::from("Chargement des animes"));
 
     let file = std::fs::File::open(file_path).unwrap();
-    let animes: Medias = serde_json::from_reader(file).unwrap();
+    let animes: Medias = match serde_json::from_reader(&file) {
+        Ok(v) => v,
+        Err(_e) => {
+            get_file(true);
+            println!("\nNouvelle base de données téléchargée, veuillez relancer le programme");
+            std::process::exit(1);
+            #[allow(unreachable_code)]
+            serde_json::from_reader(&file).unwrap()
+        }
+    };
     let animes = animes.pretty_names();
 
     sp.stop_with_symbol("  ");

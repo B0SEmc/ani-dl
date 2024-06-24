@@ -10,7 +10,7 @@ fn download_file(file_path: &Path) {
     io::copy(&mut resp, &mut out).expect("Failed to write to file");
 }
 
-pub fn get_file() {
+pub fn get_file(overwrite: bool) {
     let dir = ProjectDirs::from("", "B0SE", "ani-dl").expect("Failed to get project directory");
     let data_dir = dir.data_dir();
 
@@ -19,7 +19,7 @@ pub fn get_file() {
     }
 
     let file_path = data_dir.join("anime_data.json");
-    if !file_path.exists() {
+    if overwrite || !file_path.exists() {
         download_file(&file_path);
     }
 }
