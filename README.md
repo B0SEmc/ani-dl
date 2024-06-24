@@ -19,7 +19,7 @@
 ## Installation
 
 <details>
-  <summary>Arch (AUR)</summary>
+  <summary>Arch Linux (AUR)</summary>
   
   ```bash
   yay -S ani-dl
@@ -29,6 +29,7 @@
   <summary>Scoop (Windows)</summary>
   
   ```bash
+  scoop bucket add extras
   scoop bucket add sendus https://github.com/S3nda/Sendus
   scoop install ani-dl
   ```
@@ -49,5 +50,5 @@ cargo build --release
 ```
 ## Thanks
 
-[ani-cli](https://github.com/pystardust/ani-cli) for the inspiration and their disclaimer
-[@S3nda](https://github.com/S3nda) for making the scraper (private).
+- [ani-cli](https://github.com/pystardust/ani-cli) for the inspiration and their disclaimer
+- [@S3nda](https://github.com/S3nda) for making the scraper (private)
