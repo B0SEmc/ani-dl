@@ -38,11 +38,10 @@ fn download(episodes: Vec<String>, name: &str) {
 }
 
 fn watch(link: &str) {
-    let output = std::process::Command::new("mpv")
+    std::process::Command::new("mpv")
         .arg(link)
         .output()
         .expect("Failed to execute command");
-    println!("{}", String::from_utf8_lossy(&output.stdout));
 }
 
 fn main() {
@@ -60,10 +59,8 @@ fn main() {
         Ok(v) => v,
         Err(_e) => {
             get_file(true);
-            println!("\nNouvelle base de données téléchargée, veuillez relancer le programme");
+            eprintln!("\nNouvelle base de données téléchargée, veuillez relancer le programme");
             std::process::exit(1);
-            #[allow(unreachable_code)]
-            serde_json::from_reader(&file).unwrap()
         }
     };
     let animes = animes.pretty_names();
@@ -92,7 +89,7 @@ fn main() {
             .prompt()
             .unwrap();
     } else {
-        println!("Pas de version française disponible");
+        println!("Pas de VF disponible");
     }
 
     let animes3: Vec<Media> = animes2
@@ -115,9 +112,11 @@ fn main() {
         for i in 1..=ans3.episodes.len() {
             episode_numbers.push(i);
         }
-        let ans5 = Select::new("Sélectionnez l'épisode: ", episode_numbers)
-            .prompt()
-            .unwrap();
-        watch(&ans3.episodes[ans5 - 1]);
+        loop {
+            let ans5 = Select::new("Sélectionnez l'épisode: ", episode_numbers.clone())
+                .prompt()
+                .unwrap();
+            watch(&ans3.episodes[ans5 - 1]);
+        }
     }
 }
