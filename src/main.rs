@@ -60,10 +60,9 @@ fn main() {
         Err(_e) => {
             get_file(true);
             eprintln!("\nNouvelle base de données téléchargée, veuillez relancer le programme");
-            std::process::exit(1);
+            std::process::exit(0);
         }
     };
-    let animes = animes.pretty_names();
 
     sp.stop_with_symbol("  ");
 
@@ -113,9 +112,13 @@ fn main() {
             episode_numbers.push(i);
         }
         loop {
-            let ans5 = Select::new("Sélectionnez l'épisode: ", episode_numbers.clone())
-                .prompt()
-                .unwrap();
+            let ans5 =
+                match Select::new("Sélectionnez l'épisode: ", episode_numbers.clone()).prompt() {
+                    Ok(v) => v,
+                    Err(InquireError::OperationInterrupted) => break,
+                    Err(e) => panic!("{}", e),
+                };
+
             watch(&ans3.episodes[ans5 - 1]);
         }
     }

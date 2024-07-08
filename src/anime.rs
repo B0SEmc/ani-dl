@@ -1,7 +1,6 @@
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::fmt::{Display, Formatter};
-use titlecase::titlecase;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Medias {
@@ -24,12 +23,6 @@ impl Display for Media {
 }
 
 impl Medias {
-    pub fn pretty_names(mut self) -> Self {
-        for anime in &mut self.media {
-            anime.name = titlecase(&anime.name.replace('-', " "));
-        }
-        self
-    }
     pub fn get_name(&self) -> Vec<String> {
         let mut names = Vec::new();
         for anime in &self.media {
