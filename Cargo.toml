@@ -14,5 +14,7 @@ inquire = "0.7"
 colored = "2.1"
 spinners = "4.1"
 reqwest = { version = "0.12.5", features = ["blocking"] }
-directories = "5.0.1"
+directories = "5.0"
 threadpool = "1.8.1"
+git2 = "0.19"
+chrono = "0.4.38"

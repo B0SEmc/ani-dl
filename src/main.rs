@@ -52,34 +52,29 @@ fn main() {
 
     get_file(false);
 
-    let mut sp = Spinner::new(Spinners::FingerDance, String::from("Chargement des animes"));
+    let mut sp = Spinner::new(Spinners::Moon, String::from("Chargement des animes"));
 
     let file = std::fs::File::open(file_path).unwrap();
     let animes: Medias = match serde_json::from_reader(&file) {
         Ok(v) => v,
         Err(_e) => {
             get_file(true);
-            eprintln!("\nNouvelle base de données téléchargée, veuillez relancer le programme");
+            eprintln!("\nNouvelle base de données téléchargée, veuillez relancer le programme. Si le problème persiste, veuillez ouvrir une issue sur GitHub.");
             std::process::exit(0);
         }
     };
 
     sp.stop_with_symbol("  ");
 
-    let ans = Select::new("Sélectionnez les animes: ", animes.get_name())
-        .prompt()
-        .unwrap();
+    let ans = match Select::new("Sélectionnez les animes: ", animes.get_name()).prompt() {
+        Ok(v) => v,
+        Err(InquireError::OperationInterrupted) => std::process::exit(0),
+        Err(e) => panic!("{}", e),
+    };
 
     let animes2 = animes.get_seasons_from_str(&ans);
 
-    let mut vf = false;
-
-    for anime in &animes2 {
-        if anime.lang == "vf" {
-            vf = true;
-            break;
-        }
-    }
+    let vf = animes2.iter().any(|x| x.lang == "vf");
 
     let mut ans2 = "vostfr";
 
