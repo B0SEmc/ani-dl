@@ -11,7 +11,7 @@ pub struct Medias {
 pub struct Media {
     pub name: String,
     pub lang: String,
-    season: i8,
+    pub season: i8,
     media_type: String,
     pub episodes: Vec<String>,
 }

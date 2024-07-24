@@ -64,11 +64,12 @@ fn main() {
         }
     };
 
-    sp.stop_with_symbol("  ");
+    sp.stop_with_symbol(" ✔️ ");
 
     let ans = match Select::new("Sélectionnez les animes: ", animes.get_name()).prompt() {
         Ok(v) => v,
         Err(InquireError::OperationInterrupted) => std::process::exit(0),
+        Err(InquireError::OperationCanceled) => std::process::exit(0),
         Err(e) => panic!("{}", e),
     };
 
@@ -79,27 +80,41 @@ fn main() {
     let mut ans2 = "vostfr";
 
     if vf {
-        ans2 = Select::new("VF ou VOSTFR?", vec!["VF", "VOSTFR"])
-            .prompt()
-            .unwrap();
+        ans2 = match Select::new("VF ou VOSTFR?", vec!["VF", "VOSTFR"]).prompt() {
+            Ok(v) => v,
+            Err(InquireError::OperationInterrupted) => std::process::exit(0),
+            Err(InquireError::OperationCanceled) => std::process::exit(0),
+            Err(e) => panic!("{}", e),
+        }
     } else {
         println!("Pas de VF disponible");
     }
 
-    let animes3: Vec<Media> = animes2
+    let mut animes3: Vec<Media> = animes2 // only keep the selected language
         .into_iter()
         .filter(|x| x.lang == ans2.to_lowercase())
         .collect();
 
-    let ans3 = Select::new("Sélectionnez la saison: ", animes3)
-        .prompt()
-        .unwrap();
+    animes3.sort_by(|a, b| a.season.partial_cmp(&b.season).unwrap());
+
+    let ans3 = match Select::new("Sélectionnez la saison: ", animes3).prompt() {
+        Ok(v) => v,
+        Err(InquireError::OperationInterrupted) => std::process::exit(0),
+        Err(InquireError::OperationCanceled) => std::process::exit(0),
+        Err(e) => panic!("{}", e),
+    };
 
     let options = vec!["Télécharger", "Regarder"];
 
-    let ans4 = Select::new("Voulez-vous télécharger ou regarder l'anime ?", options).prompt();
+    let ans4 = match Select::new("Voulez-vous télécharger ou regarder l'anime ?", options).prompt()
+    {
+        Ok(v) => v,
+        Err(InquireError::OperationInterrupted) => std::process::exit(0),
+        Err(InquireError::OperationCanceled) => std::process::exit(0),
+        Err(e) => panic!("{}", e),
+    };
 
-    if ans4.unwrap() == "Télécharger" {
+    if ans4 == "Télécharger" {
         download(ans3.episodes, &ans3.name);
     } else {
         let mut episode_numbers = vec![];
@@ -110,7 +125,8 @@ fn main() {
             let ans5 =
                 match Select::new("Sélectionnez l'épisode: ", episode_numbers.clone()).prompt() {
                     Ok(v) => v,
-                    Err(InquireError::OperationInterrupted) => break,
+                    Err(InquireError::OperationInterrupted) => std::process::exit(0),
+                    Err(InquireError::OperationCanceled) => std::process::exit(0),
                     Err(e) => panic!("{}", e),
                 };
 
