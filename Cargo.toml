@@ -1,6 +1,6 @@
 [package]
 name = "ani-dl"
-version = "1.5.2"
+version = "1.5.3"
 edition = "2021"
 license-file = "LICENSE"
 description = "Download and watch animes in VF and VOSTFR (aka french versions)"
