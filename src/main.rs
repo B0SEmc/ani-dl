@@ -9,13 +9,41 @@ use threadpool::ThreadPool;
 mod anime;
 mod data;
 
-fn download(episodes: Vec<String>, name: &str) {
+fn parse_range(input: &str) -> Result<(u32, u32), String> {
+    let mut split = input.split('-');
+    let first = match split.next().unwrap().parse::<u32>() {
+        Ok(x) => x,
+        Err(_) => return Err("Erreur ! Veuillez respecter le format.".to_string()),
+    };
+    let second = match split.next().unwrap().parse::<u32>() {
+        Ok(x) => x,
+        Err(_) => return Err("Erreur ! Veuillez respecter le format".to_string()),
+    };
+    Ok((first, second))
+}
+
+fn download(mut episodes: Vec<String>, name: &str) {
     match PathBuf::from(name).exists() {
         true => (),
         false => std::fs::create_dir(name).unwrap(),
     }
     std::env::set_current_dir(name).unwrap();
     let pool = ThreadPool::new(12);
+
+    let ep_count = episodes.len();
+
+    if ep_count > 25 {
+        println!("Plus de 25 épisodes!");
+        println!(
+            "Sélectionnez les épisodes à télécharger (ex: 0-{})",
+            ep_count
+        );
+        let mut input = String::default();
+        std::io::stdin().read_line(&mut input).unwrap();
+        let (start, end) = parse_range(input.trim()).unwrap();
+        episodes = episodes[start as usize..end as usize].to_vec();
+        println!("Downloading episodes {} to {}", start, end);
+    }
 
     for chunk in episodes.chunks(12) {
         for episode in chunk {
@@ -26,9 +54,9 @@ fn download(episodes: Vec<String>, name: &str) {
                     .status()
                     .expect("Failed to execute command");
                 if output.success() {
-                    println!("Téléchargement de {} terminé", episode);
+                    println!("\nTéléchargement de {} terminé", episode);
                 } else {
-                    println!("Échec du téléchargement de {}", episode);
+                    eprintln!("Échec du téléchargement de {}", episode);
                 }
             });
         }
