@@ -105,60 +105,68 @@ fn main() {
 
     let vf = animes2.iter().any(|x| x.lang == "vf");
 
-    let mut ans2 = "vostfr";
-
-    if vf {
-        ans2 = match Select::new("VF ou VOSTFR?", vec!["VF", "VOSTFR"]).prompt() {
-            Ok(v) => v,
-            Err(InquireError::OperationInterrupted) => std::process::exit(0),
-            Err(InquireError::OperationCanceled) => std::process::exit(0),
-            Err(e) => panic!("{}", e),
-        }
-    } else {
-        println!("Pas de VF disponible");
-    }
-
-    let mut animes3: Vec<Media> = animes2 // only keep the selected language
-        .into_iter()
-        .filter(|x| x.lang == ans2.to_lowercase())
-        .collect();
-
-    animes3.sort_by(|a, b| a.season.partial_cmp(&b.season).unwrap());
-
-    let ans3 = match Select::new("Sélectionnez la saison: ", animes3).prompt() {
-        Ok(v) => v,
-        Err(InquireError::OperationInterrupted) => std::process::exit(0),
-        Err(InquireError::OperationCanceled) => std::process::exit(0),
-        Err(e) => panic!("{}", e),
-    };
-
-    let options = vec!["Télécharger", "Regarder"];
-
-    let ans4 = match Select::new("Voulez-vous télécharger ou regarder l'anime ?", options).prompt()
-    {
-        Ok(v) => v,
-        Err(InquireError::OperationInterrupted) => std::process::exit(0),
-        Err(InquireError::OperationCanceled) => std::process::exit(0),
-        Err(e) => panic!("{}", e),
-    };
-
-    if ans4 == "Télécharger" {
-        download(ans3.episodes, &ans3.name);
-    } else {
-        let mut episode_numbers = vec![];
-        for i in 1..=ans3.episodes.len() {
-            episode_numbers.push(i);
-        }
+    loop {
         loop {
-            let ans5 =
-                match Select::new("Sélectionnez l'épisode: ", episode_numbers.clone()).prompt() {
+            let mut ans2 = "vostfr";
+
+            if vf {
+                ans2 = match Select::new("VF ou VOSTFR?", vec!["VF", "VOSTFR"]).prompt() {
                     Ok(v) => v,
                     Err(InquireError::OperationInterrupted) => std::process::exit(0),
                     Err(InquireError::OperationCanceled) => std::process::exit(0),
                     Err(e) => panic!("{}", e),
-                };
+                }
+            } else {
+                println!("Pas de VF disponible");
+            }
 
-            watch(&ans3.episodes[ans5 - 1]);
+            let mut animes3: Vec<Media> = animes2
+                .clone() // only keep the selected language
+                .into_iter()
+                .filter(|x| x.lang == ans2.to_lowercase())
+                .collect();
+
+            animes3.sort_by(|a, b| a.season.partial_cmp(&b.season).unwrap());
+
+            let ans3 = match Select::new("Sélectionnez la saison: ", animes3).prompt() {
+                Ok(v) => v,
+                Err(InquireError::OperationInterrupted) => std::process::exit(0),
+                Err(InquireError::OperationCanceled) => break,
+                Err(e) => panic!("{}", e),
+            };
+
+            let options = vec!["Télécharger", "Regarder"];
+
+            let ans4 = match Select::new("Voulez-vous télécharger ou regarder l'anime ?", options)
+                .prompt()
+            {
+                Ok(v) => v,
+                Err(InquireError::OperationInterrupted) => std::process::exit(0),
+                Err(InquireError::OperationCanceled) => break,
+                Err(e) => panic!("{}", e),
+            };
+
+            if ans4 == "Télécharger" {
+                download(ans3.episodes, &ans3.name);
+            } else {
+                let mut episode_numbers = vec![];
+                for i in 1..=ans3.episodes.len() {
+                    episode_numbers.push(i);
+                }
+                loop {
+                    let ans5 =
+                        match Select::new("Sélectionnez l'épisode: ", episode_numbers.clone())
+                            .prompt()
+                        {
+                            Ok(v) => v,
+                            Err(InquireError::OperationInterrupted) => std::process::exit(0),
+                            Err(InquireError::OperationCanceled) => break,
+                            Err(e) => panic!("{}", e),
+                        };
+
+                    watch(&ans3.episodes[ans5 - 1]);
+                }
+            }
         }
     }
 }
