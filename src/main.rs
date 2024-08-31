@@ -3,7 +3,10 @@ use data::get_file;
 use directories::ProjectDirs;
 use inquire::*;
 use spinners::{Spinner, Spinners};
-use std::path::PathBuf;
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use threadpool::ThreadPool;
 
 mod anime;
@@ -22,15 +25,15 @@ fn parse_range(input: &str) -> Result<(u32, u32), String> {
     Ok((first, second))
 }
 
-fn download(mut episodes: Vec<String>, name: &str) {
-    match PathBuf::from(name).exists() {
+fn download(mut anime: Media) {
+    match PathBuf::from(&anime.name).exists() {
         true => (),
-        false => std::fs::create_dir(name).unwrap(),
+        false => std::fs::create_dir(&anime.name).unwrap(),
     }
-    std::env::set_current_dir(name).unwrap();
+    std::env::set_current_dir(&anime.name).unwrap();
     let pool = ThreadPool::new(12);
 
-    let ep_count = episodes.len();
+    let ep_count = anime.episodes.len();
 
     if ep_count > 25 {
         println!("Plus de 25 épisodes!");
@@ -41,27 +44,32 @@ fn download(mut episodes: Vec<String>, name: &str) {
         let mut input = String::default();
         std::io::stdin().read_line(&mut input).unwrap();
         let (start, end) = parse_range(input.trim()).unwrap();
-        episodes = episodes[start as usize..end as usize].to_vec();
+        anime.episodes = anime.episodes[start as usize..end as usize].to_vec();
         println!("Downloading episodes {} to {}", start, end);
     }
 
-    for chunk in episodes.chunks(12) {
+    let count = Arc::new(Mutex::new(0));
+    let total = anime.episodes.len();
+
+    for chunk in anime.episodes.chunks(12) {
         for episode in chunk {
             let episode = episode.clone();
+            let count = Arc::clone(&count);
             pool.execute(move || {
                 let output = std::process::Command::new("yt-dlp")
                     .arg(&episode)
                     .status()
                     .expect("Failed to execute command");
                 if output.success() {
-                    println!("\nTéléchargement de {} terminé", episode);
+                    let mut num = count.lock().unwrap();
+                    *num += 1;
+                    println!("\nTéléchargement {}/{} terminé", *num, total);
                 } else {
                     eprintln!("Échec du téléchargement de {}", episode);
                 }
             });
         }
     }
-
     pool.join();
 }
 
@@ -147,7 +155,7 @@ fn main() {
             };
 
             if ans4 == "Télécharger" {
-                download(ans3.episodes, &ans3.name);
+                download(ans3);
             } else {
                 let mut episode_numbers = vec![];
                 for i in 1..=ans3.episodes.len() {
