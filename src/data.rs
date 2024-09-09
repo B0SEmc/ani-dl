@@ -27,6 +27,10 @@ fn get_file_modification_time(file_path: &Path) -> SystemTime {
 fn download_file(file_path: &Path) {
     let mut resp = reqwest::blocking::get(ANIME_DATA_URL)
         .expect("Echec lors du téléchargement du fichier, vérifiez votre connexion internet");
+    if resp.content_length().unwrap() < 500_000 {
+        println!("Ignoring new file, file < 500KB, scrapper probably messed up again (complain to S3nda).");
+        return;
+    }
     let mut out = std::fs::File::create(file_path).expect("Failed to create file");
     io::copy(&mut resp, &mut out).expect("Failed to write to file");
 }
