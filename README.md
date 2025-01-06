@@ -52,4 +52,3 @@ cargo build --release
 ## Thanks
 
 - [ani-cli](https://github.com/pystardust/ani-cli) for the inspiration and their disclaimer
-- [@S3nda](https://github.com/S3nda) for making the scraper (private)
