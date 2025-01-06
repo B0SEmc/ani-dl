@@ -1,3 +1,4 @@
+A shit fork of ani-dl to make ani-dl work again
 ## Table of Contents
 
 - [Install](#install)
