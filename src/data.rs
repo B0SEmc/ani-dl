@@ -6,8 +6,10 @@ use std::path::Path;
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const ANIME_DATA_URL: &str = "https://raw.githubusercontent.com/frivoxfr/ani-data/refs/heads/main/anime_data.json";
-const LATEST_COMMIT_URL: &str = "https://raw.githubusercontent.com/frivoxfr/ani-data/refs/heads/main/time.txt";
+const ANIME_DATA_URL: &str =
+    "https://raw.githubusercontent.com/frivoxfr/ani-data/refs/heads/main/anime_data.json";
+const LATEST_COMMIT_URL: &str =
+    "https://raw.githubusercontent.com/frivoxfr/ani-data/refs/heads/main/time.txt";
 
 fn get_last_commit_time() -> SystemTime {
     let file = reqwest::blocking::get(LATEST_COMMIT_URL)
@@ -48,3 +50,4 @@ pub fn get_file(overwrite: bool) {
         download_file(&file_path);
     }
 }
+
