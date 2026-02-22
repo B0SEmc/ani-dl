@@ -11,10 +11,6 @@ use std::{
     io::{BufRead, BufReader},
     path::Path,
     process::{Command, Stdio},
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
 };
 use threadpool::ThreadPool;
 
@@ -36,11 +32,26 @@ fn parse_range(input: &str) -> anyhow::Result<(u32, u32)> {
     Ok((first, second))
 }
 
-fn download(mut anime: Media) -> anyhow::Result<()> {
-    let download_dir = Path::new(&anime.name);
+fn to_title_case(s: &str) -> String {
+    s.split_whitespace()
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
 
-    if !download_dir.exists() {
-        fs::create_dir(download_dir)?;
+fn download(mut anime: Media) -> anyhow::Result<()> {
+    // Structure : [nom_anime]/S{saison}/ (nom capitalisé)
+    let anime_name_title = to_title_case(&anime.name);
+    let season_dir = Path::new(&anime_name_title).join(format!("S{}", anime.season));
+
+    if !season_dir.exists() {
+        fs::create_dir_all(&season_dir)?;
     }
 
     let ep_count = anime.episodes.len();
@@ -63,8 +74,6 @@ fn download(mut anime: Media) -> anyhow::Result<()> {
         anime.episodes = anime.episodes[start as usize..=end as usize].to_vec();
     }
 
-    let total = anime.episodes.len();
-    let completed = Arc::new(AtomicUsize::new(0));
     let pool = ThreadPool::new(12);
     let m = MultiProgress::new();
     let style = ProgressStyle::with_template(
@@ -72,22 +81,33 @@ fn download(mut anime: Media) -> anyhow::Result<()> {
     )?
     .progress_chars("=>-");
 
+    let anime_name = anime_name_title.clone();
+    let anime_season = anime.season;
+
     for (index, episode) in anime.episodes.into_iter().enumerate() {
         let m = m.clone();
         let style = style.clone();
-        let completed = Arc::clone(&completed);
-        let download_dir = download_dir.to_path_buf();
+        let season_dir = season_dir.clone();
+        let anime_name = anime_name.clone();
 
         pool.execute(move || {
+            // Nom de fichier : "[anime] E01S1" (yt-dlp ajoute l'extension automatiquement)
+            let output_template = format!(
+                "{}/{} E{:02}S{}.%(ext)s",
+                season_dir.display(),
+                anime_name,
+                index + 1,
+                anime_season
+            );
             let pb = m.add(ProgressBar::new(100));
             pb.set_style(style);
-            pb.set_message(format!("Épisode {}", index + 1));
+            pb.set_message(format!("| Épisode {:02}", index + 1));
 
             let mut child = match Command::new("yt-dlp")
                 .arg("--newline")
                 .arg("--progress")
+                .arg("-o").arg(&output_template)
                 .arg(&episode)
-                .current_dir(&download_dir)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
                 .spawn()
@@ -113,7 +133,7 @@ fn download(mut anime: Media) -> anyhow::Result<()> {
 
                     if let Some(speed) = extract_speed(&line) {
                         pb.set_message(format!(
-                            "Épisode {} | {}",
+                            "| Épisode {:02} | {}",
                             index + 1,
                             speed.yellow()
                         ));
@@ -123,16 +143,14 @@ fn download(mut anime: Media) -> anyhow::Result<()> {
 
             match child.wait() {
                 Ok(status) if status.success() => {
-                    let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
                     pb.finish_with_message(format!(
-                        "Épisode {} terminé ({}/{})",
+                        "| Épisode {:02} | {}",
                         index + 1,
-                        done,
-                        total
+                        "terminé".cyan()
                     ));
                 }
                 _ => {
-                    pb.abandon_with_message(format!("Épisode {} échec", index + 1));
+                    pb.abandon_with_message(format!("| Épisode {:02} échec", index + 1));
                 }
             }
         });
