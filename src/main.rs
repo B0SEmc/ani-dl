@@ -1,75 +1,157 @@
+use anyhow::Context;
 use crate::anime::*;
+use colored::Colorize;
 use data::get_file;
 use directories::ProjectDirs;
 use inquire::*;
 use spinners::{Spinner, Spinners};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
+    fs,
+    io::{BufRead, BufReader},
+    path::Path,
+    process::{Command, Stdio},
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 use threadpool::ThreadPool;
 
 mod anime;
 mod data;
 
-fn parse_range(input: &str) -> Result<(u32, u32), String> {
+fn parse_range(input: &str) -> anyhow::Result<(u32, u32)> {
     let mut split = input.split('-');
-    let first = match split.next().unwrap().parse::<u32>() {
-        Ok(x) => x,
-        Err(_) => return Err("Erreur ! Veuillez respecter le format.".to_string()),
-    };
-    let second = match split.next().unwrap().parse::<u32>() {
-        Ok(x) => x,
-        Err(_) => return Err("Erreur ! Veuillez respecter le format".to_string()),
-    };
+    let first = split
+        .next()
+        .context("Format invalide")?
+        .parse::<u32>()
+        .context("Le premier nombre est invalide")?;
+    let second = split
+        .next()
+        .context("Format invalide (manque le deuxième nombre)")?
+        .parse::<u32>()
+        .context("Le deuxième nombre est invalide")?;
     Ok((first, second))
 }
 
-fn download(mut anime: Media) {
-    if !PathBuf::from(&anime.name).exists() {
-        std::fs::create_dir(&anime.name).unwrap();
+fn download(mut anime: Media) -> anyhow::Result<()> {
+    let download_dir = Path::new(&anime.name);
+
+    if !download_dir.exists() {
+        fs::create_dir(download_dir)?;
     }
-    std::env::set_current_dir(&anime.name).unwrap();
-    let pool = ThreadPool::new(12);
 
     let ep_count = anime.episodes.len();
 
     if ep_count > 25 {
-        println!("Plus de 25 épisodes!");
+        println!("Plus de 25 épisodes !");
         println!(
             "Sélectionnez les épisodes à télécharger (ex: 0-{})",
-            ep_count
+            ep_count - 1
         );
-        let mut input = String::default();
-        std::io::stdin().read_line(&mut input).unwrap();
-        let (start, end) = parse_range(input.trim()).unwrap();
-        anime.episodes = anime.episodes[start as usize..end as usize].to_vec();
-        println!("Downloading episodes {} to {}", start, end);
+
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+
+        let (start, end) = parse_range(input.trim())
+            .context("Plage d’épisodes invalide")?;
+
+        println!("Téléchargement des épisodes de {} à {}", start, end);
+
+        anime.episodes = anime.episodes[start as usize..=end as usize].to_vec();
     }
 
-    let count = Arc::new(Mutex::new(0));
     let total = anime.episodes.len();
+    let completed = Arc::new(AtomicUsize::new(0));
+    let pool = ThreadPool::new(12);
+    let m = MultiProgress::new();
+    let style = ProgressStyle::with_template(
+        "{spinner:.cyan} [{elapsed_precise}] [{bar:40.green/white}] {percent:>3}% {msg}",
+    )?
+    .progress_chars("=>-");
 
-    for chunk in anime.episodes.chunks(12) {
-        for episode in chunk {
-            let episode = episode.clone();
-            let count = Arc::clone(&count);
-            pool.execute(move || {
-                let output = std::process::Command::new("yt-dlp")
-                    .arg(&episode)
-                    .status()
-                    .expect("Failed to execute command");
-                if output.success() {
-                    let mut num = count.lock().unwrap();
-                    *num += 1;
-                    println!("\nTéléchargement {}/{} terminé", *num, total);
-                } else {
-                    eprintln!("Échec du téléchargement de {}", episode);
+    for (index, episode) in anime.episodes.into_iter().enumerate() {
+        let m = m.clone();
+        let style = style.clone();
+        let completed = Arc::clone(&completed);
+        let download_dir = download_dir.to_path_buf();
+
+        pool.execute(move || {
+            let pb = m.add(ProgressBar::new(100));
+            pb.set_style(style);
+            pb.set_message(format!("Épisode {}", index + 1));
+
+            let mut child = match Command::new("yt-dlp")
+                .arg("--newline")
+                .arg("--progress")
+                .arg(&episode)
+                .current_dir(&download_dir)
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                Ok(child) => child,
+                Err(err) => {
+                    pb.abandon_with_message(format!("Erreur lancement yt-dlp: {}", err));
+                    return;
                 }
-            });
-        }
+            };
+
+            if let Some(stdout) = child.stdout.take() {
+                let reader = BufReader::new(stdout);
+
+                for line in reader.lines().flatten() {
+                    if !line.contains("[download]") {
+                        continue;
+                    }
+
+                    if let Some(percent) = extract_percent(&line) {
+                        pb.set_position(percent as u64);
+                    }
+
+                    if let Some(speed) = extract_speed(&line) {
+                        pb.set_message(format!(
+                            "Épisode {} | {}",
+                            index + 1,
+                            speed.yellow()
+                        ));
+                    }
+                }
+            }
+
+            match child.wait() {
+                Ok(status) if status.success() => {
+                    let done = completed.fetch_add(1, Ordering::SeqCst) + 1;
+                    pb.finish_with_message(format!(
+                        "Épisode {} terminé ({}/{})",
+                        index + 1,
+                        done,
+                        total
+                    ));
+                }
+                _ => {
+                    pb.abandon_with_message(format!("Épisode {} échec", index + 1));
+                }
+            }
+        });
     }
+
     pool.join();
+    Ok(())
+}
+
+fn extract_percent(line: &str) -> Option<f32> {
+    let percent_pos = line.find('%')?;
+    let start = line[..percent_pos].rfind(' ')?;
+    line[start..percent_pos].trim().parse().ok()
+}
+
+fn extract_speed(line: &str) -> Option<&str> {
+    let at = line.find(" at ")? + 4;
+    let eta = line.find(" ETA ")?;
+    Some(line[at..eta].trim())
 }
 
 fn watch(link: &str) {
@@ -154,7 +236,9 @@ fn main() {
             };
 
             if ans4 == "Télécharger" {
-                download(ans3);
+                if let Err(e) = download(ans3) {
+                    eprintln!("Erreur lors du téléchargement: {}", e);
+                }
             } else {
                 let mut episode_numbers = vec![];
                 for i in 1..=ans3.episodes.len() {
