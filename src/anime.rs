@@ -32,7 +32,7 @@ impl Medias {
         });
         names
     }
-    pub fn get_seasons_from_str(self, name: &str) -> Vec<Media> {
-        self.media.into_iter().filter(|x| x.name == name).collect()
+    pub fn get_seasons_from_str(&self, name: &str) -> Vec<Media> {
+        self.media.iter().filter(|x| x.name == name).cloned().collect()
     }
 }
