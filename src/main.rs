@@ -2,9 +2,9 @@ use crate::anime::*;
 use colored::Colorize;
 use data::get_file;
 use directories::ProjectDirs;
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::*;
 use spinners::{Spinner, Spinners};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::{
     fs,
     io::{BufRead, BufReader},
@@ -30,7 +30,7 @@ fn to_title_case(s: &str) -> String {
 }
 
 fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
-    // Structure : [nom_anime]/S{saison}/ (nom capitalisé)
+    // format: [nom_anime]/S{saison}/
     let anime_name_title = to_title_case(&anime.name);
     let season_dir = Path::new(&anime_name_title).join(format!("S{}", anime.season));
 
@@ -57,7 +57,7 @@ fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
         let episode_num = index + 1;
 
         pool.execute(move || {
-            // Nom de fichier : "[anime] S1E01" (yt-dlp ajoute l'extension automatiquement)
+            // format: "[anime] S1E01"
             let output_template = format!(
                 "{}/{} S{}E{:02}.%(ext)s",
                 season_dir.display(),
@@ -72,7 +72,8 @@ fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
             let mut child = match Command::new("yt-dlp")
                 .arg("--newline")
                 .arg("--progress")
-                .arg("-o").arg(&output_template)
+                .arg("-o")
+                .arg(&output_template)
                 .arg(&episode_url)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
@@ -88,7 +89,7 @@ fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
             if let Some(stdout) = child.stdout.take() {
                 let reader = BufReader::new(stdout);
 
-                for line in reader.lines().flatten() {
+                for line in reader.lines().map_while(Result::ok) {
                     if !line.contains("[download]") {
                         continue;
                     }
@@ -116,7 +117,11 @@ fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
                     ));
                 }
                 _ => {
-                    pb.abandon_with_message(format!("| Épisode {:02} | {}", episode_num, "échec".red()));
+                    pb.abandon_with_message(format!(
+                        "| Épisode {:02} | {}",
+                        episode_num,
+                        "échec".red()
+                    ));
                 }
             }
         });
@@ -160,7 +165,9 @@ fn main() {
         Ok(v) => v,
         Err(_e) => {
             get_file(true);
-            eprintln!("\nNouvelle base de données téléchargée, veuillez relancer le programme. Si le problème persiste, veuillez ouvrir une issue sur GitHub.");
+            eprintln!(
+                "\nNouvelle base de données téléchargée, veuillez relancer le programme. Si le problème persiste, veuillez ouvrir une issue sur GitHub."
+            );
             std::process::exit(0);
         }
     };
@@ -171,9 +178,16 @@ fn main() {
         let mut all_anime_names = animes.get_name();
         all_anime_names.sort();
 
-        let ans = match Select::new("Sélectionnez les animes (Echap pour quitter) : ", all_anime_names).prompt() {
+        let ans = match Select::new(
+            "Sélectionnez les animes (Échap pour quitter) : ",
+            all_anime_names,
+        )
+        .prompt()
+        {
             Ok(v) => v,
-            Err(InquireError::OperationInterrupted | InquireError::OperationCanceled) => break 'main_loop,
+            Err(InquireError::OperationInterrupted | InquireError::OperationCanceled) => {
+                break 'main_loop;
+            }
             Err(e) => panic!("{}", e),
         };
 
@@ -184,7 +198,9 @@ fn main() {
             let mut ans2 = String::from("vostfr");
 
             if vf {
-                ans2 = match Select::new("VF ou VOSTFR ? (Echap pour retour)", vec!["VF", "VOSTFR"]).prompt() {
+                ans2 = match Select::new("VF ou VOSTFR ? (Échap pour retour)", vec!["VF", "VOSTFR"])
+                    .prompt()
+                {
                     Ok(v) => String::from(v),
                     Err(InquireError::OperationCanceled) => break 'lang_loop,
                     Err(InquireError::OperationInterrupted) => std::process::exit(0),
@@ -201,14 +217,21 @@ fn main() {
 
             if animes3.is_empty() {
                 println!("Aucune saison disponible pour cette langue.");
-                if !vf { break 'lang_loop; }
+                if !vf {
+                    break 'lang_loop;
+                }
                 continue 'lang_loop;
             }
 
             animes3.sort_by(|a, b| a.season.partial_cmp(&b.season).unwrap());
 
             'season_loop: loop {
-                let ans3 = match Select::new("Sélectionnez la saison (Echap pour retour) : ", animes3.clone()).prompt() {
+                let ans3 = match Select::new(
+                    "Sélectionnez la saison (Echap pour retour) : ",
+                    animes3.clone(),
+                )
+                .prompt()
+                {
                     Ok(v) => v,
                     Err(InquireError::OperationCanceled) => break 'season_loop,
                     Err(InquireError::OperationInterrupted) => std::process::exit(0),
@@ -218,7 +241,12 @@ fn main() {
                 'action_loop: loop {
                     let options = vec!["Télécharger", "Regarder"];
 
-                    let ans4 = match Select::new("Voulez-vous télécharger ou regarder l'anime ? (Echap pour retour)", options).prompt() {
+                    let ans4 = match Select::new(
+                        "Voulez-vous télécharger ou regarder l'anime ? (Échap pour retour)",
+                        options,
+                    )
+                    .prompt()
+                    {
                         Ok(v) => v,
                         Err(InquireError::OperationCanceled) => break 'action_loop,
                         Err(InquireError::OperationInterrupted) => std::process::exit(0),
@@ -232,7 +260,7 @@ fn main() {
                         }
 
                         let selected_eps = match MultiSelect::new(
-                            "Sélectionnez les épisodes à télécharger (Espace pour choisir, Echap pour retour) : ",
+                            "Sélectionnez les épisodes à télécharger (Espace pour choisir, Échap pour retour) : ",
                             ep_choices,
                         )
                         .prompt()
@@ -264,13 +292,13 @@ fn main() {
 
                         loop {
                             let ans5 = match Select::new(
-                                "Sélectionnez l'épisode à regarder (Echap pour retour): ",
+                                "Sélectionnez l'épisode à regarder (Échap pour retour): ",
                                 episode_numbers.clone(),
                             )
                             .prompt()
                             {
                                 Ok(v) => v,
-                                Err(InquireError::OperationCanceled) => break, // Retour aux actions
+                                Err(InquireError::OperationCanceled) => break,
                                 Err(InquireError::OperationInterrupted) => std::process::exit(0),
                                 Err(e) => panic!("{}", e),
                             };
@@ -280,7 +308,7 @@ fn main() {
                         }
                     }
                 } // 'action_loop
-                
+
                 if !vf {
                     break 'lang_loop;
                 }
