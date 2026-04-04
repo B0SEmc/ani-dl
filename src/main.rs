@@ -1,7 +1,4 @@
-use crate::anime::*;
 use colored::Colorize;
-use data::get_file;
-use directories::ProjectDirs;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::*;
 use spinners::{Spinner, Spinners};
@@ -13,8 +10,10 @@ use std::{
 };
 use threadpool::ThreadPool;
 
-mod anime;
-mod data;
+mod sources;
+
+use sources::anime_sama::AnimeSama;
+use sources::Source;
 
 fn to_title_case(s: &str) -> String {
     s.split_whitespace()
@@ -29,10 +28,9 @@ fn to_title_case(s: &str) -> String {
         .join(" ")
 }
 
-fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
-    // format: [nom_anime]/S{saison}/
-    let anime_name_title = to_title_case(&anime.name);
-    let season_dir = Path::new(&anime_name_title).join(format!("S{}", anime.season));
+fn download(anime_name: &str, season: i8, episodes: &[String], selected_indices: Vec<usize>) -> anyhow::Result<()> {
+    let anime_name_title = to_title_case(anime_name);
+    let season_dir = Path::new(&anime_name_title).join(format!("S{}", season));
 
     if !season_dir.exists() {
         fs::create_dir_all(&season_dir)?;
@@ -46,10 +44,9 @@ fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
     .progress_chars("=>-");
 
     let anime_name = anime_name_title.clone();
-    let anime_season = anime.season;
 
     for &index in &selected_indices {
-        let episode_url = anime.episodes[index].clone();
+        let episode_url = episodes[index].clone();
         let m = m.clone();
         let style = style.clone();
         let season_dir = season_dir.clone();
@@ -57,12 +54,11 @@ fn download(anime: &Media, selected_indices: Vec<usize>) -> anyhow::Result<()> {
         let episode_num = index + 1;
 
         pool.execute(move || {
-            // format: "[anime] S1E01"
             let output_template = format!(
                 "{}/{} S{}E{:02}.%(ext)s",
                 season_dir.display(),
                 anime_name,
-                anime_season,
+                season,
                 episode_num
             );
             let pb = m.add(ProgressBar::new(100));
@@ -144,106 +140,150 @@ fn extract_speed(line: &str) -> Option<&str> {
 }
 
 fn watch(link: &str) {
-    std::process::Command::new("mpv")
-        .arg(link)
-        .output()
-        .expect("Failed to execute command");
+    // Use yt-dlp to resolve the embed URL, then pipe to mpv
+    let status = std::process::Command::new("mpv")
+        .arg(format!("ytdl://{}", link))
+        .status();
+
+    match status {
+        Ok(s) if !s.success() => {
+            eprintln!("{}", "mpv a échoué, tentative avec yt-dlp...".yellow());
+            let _ = std::process::Command::new("yt-dlp")
+                .arg("--quiet")
+                .arg("-o")
+                .arg("-")
+                .arg(link)
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|child| {
+                    std::process::Command::new("mpv")
+                        .arg("-")
+                        .stdin(child.stdout.unwrap())
+                        .status()
+                });
+        }
+        Err(e) => eprintln!("Erreur lancement mpv: {}", e),
+        _ => {}
+    }
 }
 
 fn main() {
-    let file_path = ProjectDirs::from("", "B0SE", "ani-dl")
-        .expect("Failed to get project directory")
-        .data_dir()
-        .join("anime_data.json");
-
-    get_file(false);
-
-    let mut sp = Spinner::new(Spinners::Moon, String::from("Chargement des animes"));
-
-    let file = std::fs::File::open(file_path).unwrap();
-    let animes: Medias = match serde_json::from_reader(&file) {
-        Ok(v) => v,
-        Err(_e) => {
-            get_file(true);
-            eprintln!(
-                "\nNouvelle base de données téléchargée, veuillez relancer le programme. Si le problème persiste, veuillez ouvrir une issue sur GitHub."
-            );
-            std::process::exit(0);
-        }
-    };
-
-    sp.stop_with_symbol(" ✔️ ");
+    let source = AnimeSama::new();
 
     'main_loop: loop {
-        let mut all_anime_names = animes.get_name();
-        all_anime_names.sort();
-
-        let ans = match Select::new(
-            "Sélectionnez les animes (Échap pour quitter) : ",
-            all_anime_names,
-        )
-        .prompt()
+        // Step 1: Search
+        let query = match Text::new("Rechercher un anime (Échap pour quitter) :")
+            .prompt()
         {
-            Ok(v) => v,
+            Ok(q) if !q.trim().is_empty() => q.trim().to_string(),
+            Ok(_) => continue 'main_loop,
             Err(InquireError::OperationInterrupted | InquireError::OperationCanceled) => {
                 break 'main_loop;
             }
             Err(e) => panic!("{}", e),
         };
 
-        let animes2 = animes.get_seasons_from_str(&ans);
-        let vf = animes2.iter().any(|x| x.lang == "vf");
+        let mut sp = Spinner::new(Spinners::Moon, format!("Recherche de \"{}\"...", query));
 
-        'lang_loop: loop {
-            let mut ans2 = String::from("vostfr");
+        let results = match source.search(&query) {
+            Ok(r) if !r.is_empty() => {
+                sp.stop_with_symbol(" ✔️ ");
+                r
+            }
+            Ok(_) => {
+                sp.stop_with_symbol(" ❌ ");
+                println!("{}", "Aucun résultat trouvé.".yellow());
+                continue 'main_loop;
+            }
+            Err(e) => {
+                sp.stop_with_symbol(" ❌ ");
+                eprintln!("Erreur de recherche: {}", e);
+                continue 'main_loop;
+            }
+        };
 
-            if vf {
-                ans2 = match Select::new("VF ou VOSTFR ? (Échap pour retour)", vec!["VF", "VOSTFR"])
+        // Step 2: Select anime
+        let anime = match Select::new("Sélectionnez un anime (Échap pour retour) :", results)
+            .prompt()
+        {
+            Ok(a) => a,
+            Err(InquireError::OperationCanceled) => continue 'main_loop,
+            Err(InquireError::OperationInterrupted) => break 'main_loop,
+            Err(e) => panic!("{}", e),
+        };
+
+        // Step 3: Get seasons
+        let mut sp2 = Spinner::new(Spinners::Moon, String::from("Chargement des saisons..."));
+
+        let seasons = match source.get_seasons(&anime) {
+            Ok(s) if !s.is_empty() => {
+                sp2.stop_with_symbol(" ✔️ ");
+                s
+            }
+            Ok(_) => {
+                sp2.stop_with_symbol(" ❌ ");
+                println!("{}", "Aucune saison trouvée.".yellow());
+                continue 'main_loop;
+            }
+            Err(e) => {
+                sp2.stop_with_symbol(" ❌ ");
+                eprintln!("Erreur: {}", e);
+                continue 'main_loop;
+            }
+        };
+
+        'season_loop: loop {
+            let season = match Select::new(
+                "Sélectionnez la saison (Échap pour retour) :",
+                seasons.clone(),
+            )
+            .prompt()
+            {
+                Ok(s) => s,
+                Err(InquireError::OperationCanceled) => break 'season_loop,
+                Err(InquireError::OperationInterrupted) => std::process::exit(0),
+                Err(e) => panic!("{}", e),
+            };
+
+            // Step 4: Select language
+            'lang_loop: loop {
+                let lang = if season.langs.len() == 1 {
+                    season.langs[0].clone()
+                } else {
+                    match Select::new(
+                        "Langue (Échap pour retour) :",
+                        season.langs.clone(),
+                    )
                     .prompt()
-                {
-                    Ok(v) => String::from(v),
-                    Err(InquireError::OperationCanceled) => break 'lang_loop,
-                    Err(InquireError::OperationInterrupted) => std::process::exit(0),
-                    Err(e) => panic!("{}", e),
-                };
-            }
-
-            // On récupère les saisons pour la langue choisie
-            let mut animes3: Vec<Media> = animes2
-                .iter()
-                .filter(|x| x.lang == ans2.to_lowercase())
-                .cloned()
-                .collect();
-
-            if animes3.is_empty() {
-                println!("Aucune saison disponible pour cette langue.");
-                if !vf {
-                    break 'lang_loop;
-                }
-                continue 'lang_loop;
-            }
-
-            animes3.sort_by(|a, b| a.season.partial_cmp(&b.season).unwrap());
-
-            'season_loop: loop {
-                let ans3 = match Select::new(
-                    "Sélectionnez la saison (Echap pour retour) : ",
-                    animes3.clone(),
-                )
-                .prompt()
-                {
-                    Ok(v) => v,
-                    Err(InquireError::OperationCanceled) => break 'season_loop,
-                    Err(InquireError::OperationInterrupted) => std::process::exit(0),
-                    Err(e) => panic!("{}", e),
+                    {
+                        Ok(l) => l,
+                        Err(InquireError::OperationCanceled) => break 'lang_loop,
+                        Err(InquireError::OperationInterrupted) => std::process::exit(0),
+                        Err(e) => panic!("{}", e),
+                    }
                 };
 
+                // Step 5: Get episodes
+                let mut sp3 =
+                    Spinner::new(Spinners::Moon, String::from("Chargement des épisodes..."));
+
+                let episodes = match source.get_episodes(&anime, season.number, &lang) {
+                    Ok(eps) => {
+                        sp3.stop_with_symbol(" ✔️ ");
+                        eps
+                    }
+                    Err(e) => {
+                        sp3.stop_with_symbol(" ❌ ");
+                        eprintln!("Erreur: {}", e);
+                        continue 'lang_loop;
+                    }
+                };
+
+                // Step 6: Download or Watch
                 'action_loop: loop {
-                    let options = vec!["Télécharger", "Regarder"];
-
-                    let ans4 = match Select::new(
-                        "Voulez-vous télécharger ou regarder l'anime ? (Échap pour retour)",
-                        options,
+                    let action = match Select::new(
+                        "Télécharger ou regarder ? (Échap pour retour)",
+                        vec!["Télécharger", "Regarder"],
                     )
                     .prompt()
                     {
@@ -253,14 +293,14 @@ fn main() {
                         Err(e) => panic!("{}", e),
                     };
 
-                    if ans4 == "Télécharger" {
+                    if action == "Télécharger" {
                         let mut ep_choices = vec![];
-                        for i in 1..=ans3.episodes.len() {
+                        for i in 1..=episodes.len() {
                             ep_choices.push(format!("Épisode {}", i));
                         }
 
                         let selected_eps = match MultiSelect::new(
-                            "Sélectionnez les épisodes à télécharger (Espace pour choisir, Échap pour retour) : ",
+                            "Sélectionnez les épisodes (Espace pour choisir, Échap pour retour) :",
                             ep_choices,
                         )
                         .prompt()
@@ -281,18 +321,18 @@ fn main() {
                             .map(|s| s.replace("Épisode ", "").parse::<usize>().unwrap() - 1)
                             .collect();
 
-                        if let Err(e) = download(&ans3, indices) {
+                        if let Err(e) = download(&anime.name, season.number, &episodes, indices) {
                             eprintln!("Erreur lors du téléchargement: {}", e);
                         }
                     } else {
                         let mut episode_numbers = vec![];
-                        for i in 1..=ans3.episodes.len() {
+                        for i in 1..=episodes.len() {
                             episode_numbers.push(format!("Épisode {}", i));
                         }
 
                         loop {
-                            let ans5 = match Select::new(
-                                "Sélectionnez l'épisode à regarder (Échap pour retour): ",
+                            let ans = match Select::new(
+                                "Sélectionnez l'épisode à regarder (Échap pour retour) :",
                                 episode_numbers.clone(),
                             )
                             .prompt()
@@ -303,16 +343,17 @@ fn main() {
                                 Err(e) => panic!("{}", e),
                             };
 
-                            let ep_idx = ans5.replace("Épisode ", "").parse::<usize>().unwrap() - 1;
-                            watch(&ans3.episodes[ep_idx]);
+                            let ep_idx =
+                                ans.replace("Épisode ", "").parse::<usize>().unwrap() - 1;
+                            watch(&episodes[ep_idx]);
                         }
                     }
                 } // 'action_loop
 
-                if !vf {
+                if season.langs.len() == 1 {
                     break 'lang_loop;
                 }
-            } // 'season_loop
-        } // 'lang_loop
+            } // 'lang_loop
+        } // 'season_loop
     }
 }
