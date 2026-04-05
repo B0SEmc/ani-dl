@@ -29,47 +29,74 @@ impl AnimeSama {
     }
 
     /// Known hosts that yt-dlp/mpv can handle, in priority order.
-    const SUPPORTED_HOSTS: &[&str] = &[
-        "sibnet.ru",
-        "vidmoly.to",
-        "sendvid.com",
-    ];
+    const SUPPORTED_HOSTS: &[&str] = &["sibnet.ru", "sendvid.com"];
 
-    /// Parse all epsN arrays from episodes.js, return the best supported source.
-    /// Prefers hosts known to work with yt-dlp (sibnet > vidmoly > sendvid).
-    /// Falls back to first available source if none match.
+    /// Check if a URL points to a supported host.
+    fn is_supported(url: &str) -> bool {
+        Self::SUPPORTED_HOSTS.iter().any(|h| url.contains(h))
+    }
+
+    /// Parse all epsN arrays from episodes.js, return best URL per episode.
+    /// For each episode position, picks the URL from the highest-priority
+    /// supported host across all source arrays. This handles cases where
+    /// a single source array mixes hosts (e.g. sibnet with vidmoly gaps).
     fn parse_episodes_js(js: &str) -> Vec<String> {
         let re = Regex::new(r#"var\s+eps(\d+)\s*=\s*\[([^\]]+)\]"#).unwrap();
         let url_re = Regex::new(r#"['\"](https?://[^'\"]+)['\"]"#).unwrap();
 
-        let mut all_sources: Vec<(u32, Vec<String>)> = Vec::new();
+        let mut all_sources: Vec<Vec<String>> = Vec::new();
 
         for cap in re.captures_iter(js) {
-            let num: u32 = cap[1].parse().unwrap_or(0);
             let urls: Vec<String> = url_re
                 .captures_iter(&cap[2])
                 .map(|c| c[1].to_string())
                 .collect();
             if !urls.is_empty() {
-                all_sources.push((num, urls));
+                all_sources.push(urls);
             }
         }
 
-        // Pick the best source: first supported host found
-        for host in Self::SUPPORTED_HOSTS {
-            if let Some((_, urls)) = all_sources.iter().find(|(_, urls)| {
-                urls.first().is_some_and(|u| u.contains(host))
-            }) {
-                return urls.clone();
+        if all_sources.is_empty() {
+            return Vec::new();
+        }
+
+        // Find the max episode count across all sources
+        let max_eps = all_sources.iter().map(|s| s.len()).max().unwrap_or(0);
+
+        // For each episode position, pick the best URL by host priority
+        let mut best: Vec<String> = Vec::with_capacity(max_eps);
+        for i in 0..max_eps {
+            let mut picked = None;
+            // Try supported hosts in priority order
+            for host in Self::SUPPORTED_HOSTS {
+                for source in &all_sources {
+                    if let Some(url) = source.get(i) {
+                        if url.contains(host) {
+                            picked = Some(url.clone());
+                            break;
+                        }
+                    }
+                }
+                if picked.is_some() {
+                    break;
+                }
+            }
+            // Fallback: first available URL at this position, prefer supported
+            let url = picked.unwrap_or_else(|| {
+                all_sources
+                    .iter()
+                    .filter_map(|s| s.get(i))
+                    .find(|u| Self::is_supported(u))
+                    .or_else(|| all_sources.iter().filter_map(|s| s.get(i)).next())
+                    .cloned()
+                    .unwrap_or_default()
+            });
+            if !url.is_empty() {
+                best.push(url);
             }
         }
 
-        // Fallback: return first source available
-        all_sources
-            .into_iter()
-            .next()
-            .map(|(_, urls)| urls)
-            .unwrap_or_default()
+        best
     }
 }
 

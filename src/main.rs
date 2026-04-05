@@ -139,28 +139,73 @@ fn extract_speed(line: &str) -> Option<&str> {
     Some(line[at..eta].trim())
 }
 
+/// Hosts that yt-dlp can resolve natively.
+const YTDLP_HOSTS: &[&str] = &["sibnet.ru", "sendvid.com"];
+
+fn can_ytdlp_handle(url: &str) -> bool {
+    YTDLP_HOSTS.iter().any(|h| url.contains(h))
+}
+
+fn open_in_browser(url: &str) {
+    eprintln!("{}", "Ouverture dans le navigateur par défaut...".cyan());
+    let cmd = if cfg!(target_os = "macos") {
+        "open"
+    } else if cfg!(target_os = "windows") {
+        "start"
+    } else {
+        "xdg-open"
+    };
+    let _ = Command::new(cmd).arg(url).status();
+}
+
 fn watch(link: &str) {
-    // Use yt-dlp to resolve the embed URL, then pipe to mpv
-    let status = std::process::Command::new("mpv")
+    if !can_ytdlp_handle(link) {
+        let host = link
+            .split('/')
+            .nth(2)
+            .unwrap_or("inconnu");
+        eprintln!(
+            "{}",
+            format!(
+                "⚠ Source non supportée par yt-dlp ({}). Ouverture dans le navigateur.",
+                host
+            )
+            .yellow()
+        );
+        open_in_browser(link);
+        return;
+    }
+
+    let status = Command::new("mpv")
         .arg(format!("ytdl://{}", link))
         .status();
 
     match status {
         Ok(s) if !s.success() => {
             eprintln!("{}", "mpv a échoué, tentative avec yt-dlp...".yellow());
-            let _ = std::process::Command::new("yt-dlp")
+            let yt_ok = Command::new("yt-dlp")
                 .arg("--quiet")
                 .arg("-o")
                 .arg("-")
                 .arg(link)
-                .stdout(std::process::Stdio::piped())
+                .stdout(Stdio::piped())
                 .spawn()
                 .and_then(|child| {
-                    std::process::Command::new("mpv")
+                    Command::new("mpv")
                         .arg("-")
                         .stdin(child.stdout.unwrap())
                         .status()
-                });
+                })
+                .map(|s| s.success())
+                .unwrap_or(false);
+
+            if !yt_ok {
+                eprintln!(
+                    "{}",
+                    "yt-dlp a aussi échoué, ouverture dans le navigateur...".yellow()
+                );
+                open_in_browser(link);
+            }
         }
         Err(e) => eprintln!("Erreur lancement mpv: {}", e),
         _ => {}
