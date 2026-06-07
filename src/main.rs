@@ -10,6 +10,7 @@ use std::{
 };
 use threadpool::ThreadPool;
 
+mod config;
 mod sources;
 
 use sources::anime_sama::AnimeSama;
@@ -213,7 +214,17 @@ fn watch(link: &str) {
 }
 
 fn main() {
-    let source = AnimeSama::new();
+    // Resolve a live anime-sama domain before doing anything else: the domain
+    // rotates and a hardcoded host breaks the tool whenever it moves.
+    let base_url = match config::resolve_base_url() {
+        Ok(url) => url,
+        Err(e) => {
+            eprintln!("{}", format!("{}", e).red());
+            std::process::exit(1);
+        }
+    };
+
+    let source = AnimeSama::new(base_url);
 
     'main_loop: loop {
         // Step 1: Search

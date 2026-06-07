@@ -67,6 +67,31 @@ To update this list, edit `SUPPORTED_HOSTS` in `anime_sama.rs`.
 
 The anime pages (`panneauAnime()` calls) only list VOSTFR paths. VF and VA versions exist but aren't listed in the HTML. The scraper probes for them with HEAD requests on `episodes.js` for each season path.
 
+## Domain resolution & mirrors
+
+anime-sama rotates its domain regularly (`.to`, `.xyz`, `.org`, `.fr`, ...), so
+the base URL is **not** hardcoded. It is resolved at startup by `src/config.rs`,
+in order of precedence:
+
+1. **`ANIME_SAMA_BASE_URL`** — explicit override, used as-is, no probing.
+   Handy for testing/CI or forcing a brand-new domain on the spot.
+2. **`ANIME_SAMA_MIRRORS`** (comma/newline separated) **or** the user config
+   file `~/.config/ani-dl/mirrors.txt` — every entry is probed (`GET`, follows
+   redirects, healthy if status `< 400`) and the first reachable one wins.
+3. **Built-in default list** — used when no env var / config file is present.
+
+`mirrors.txt` is auto-created (self-documented) on first run, so when a domain
+moves you just edit a text file — no recompile needed.
+
+```
+# ~/.config/ani-dl/mirrors.txt — one domain per line, first reachable wins
+https://anime-sama.to
+https://anime-sama.xyz
+```
+
+`AnimeSama::new(base_url)` receives the resolved URL; all requests are built
+from `self.base_url`.
+
 ## Adding a new source
 
 To add support for a new catalog site:

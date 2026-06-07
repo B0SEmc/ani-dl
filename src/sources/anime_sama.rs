@@ -4,13 +4,14 @@ use scraper::{Html, Selector};
 
 use super::{AnimeResult, SeasonInfo, Source};
 
-const BASE_URL: &str = "https://anime-sama.to";
-
-pub struct AnimeSama;
+pub struct AnimeSama {
+    /// Live base URL, resolved at startup (see `crate::config`).
+    base_url: String,
+}
 
 impl AnimeSama {
-    pub fn new() -> Self {
-        Self
+    pub fn new(base_url: String) -> Self {
+        Self { base_url }
     }
 
     /// Parse panneauAnime() calls from the anime page JS to extract seasons.
@@ -102,7 +103,7 @@ impl AnimeSama {
 
 impl Source for AnimeSama {
     fn search(&self, query: &str) -> Result<Vec<AnimeResult>> {
-        let url = format!("{}/template-php/defaut/fetch.php", BASE_URL);
+        let url = format!("{}/template-php/defaut/fetch.php", self.base_url);
         let body = reqwest::blocking::Client::new()
             .post(&url)
             .header("Content-Type", "application/x-www-form-urlencoded")
@@ -147,7 +148,7 @@ impl Source for AnimeSama {
             let full_url = if href.starts_with("http") {
                 href
             } else {
-                format!("{}{}", BASE_URL, href)
+                format!("{}{}", self.base_url, href)
             };
 
             // Ensure URL ends with /
@@ -202,7 +203,7 @@ impl Source for AnimeSama {
                 }
                 let probe_url = format!(
                     "{}/catalogue/{}/{}/{}/episodes.js",
-                    BASE_URL, anime.slug, path, lang
+                    self.base_url, anime.slug, path, lang
                 );
                 if let Ok(resp) = client.head(&probe_url).send() {
                     if resp.status().is_success() {
@@ -255,7 +256,7 @@ impl Source for AnimeSama {
 
         let episodes_url = format!(
             "{}/catalogue/{}/{}/{}/episodes.js",
-            BASE_URL, anime.slug, season_path, lang
+            self.base_url, anime.slug, season_path, lang
         );
 
         let js = reqwest::blocking::get(&episodes_url)
