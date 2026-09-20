@@ -41,5 +41,5 @@ Contacting the maintainer
 </h2>
 <br>
 
-Make a GitHub issue.
+Make a GitHub issue or email `ani-dl@b0se.dev`
 </div>
