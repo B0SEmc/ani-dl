@@ -386,10 +386,10 @@ fn season_menu(source: &Arc<dyn Source>, anime: &Anime, season: &Season) {
 
 fn connect_sources() -> Vec<Arc<dyn Source>> {
     let mut sources: Vec<Arc<dyn Source>> = Vec::new();
-    if let Some(s) = with_spinner("Connexion à anime-sama", AnimeSama::connect) {
+    if let Some(s) = with_spinner("Connexion à voiranime", VoirAnime::connect) {
         sources.push(Arc::new(s));
     }
-    if let Some(s) = with_spinner("Connexion à voiranime", VoirAnime::connect) {
+    if let Some(s) = with_spinner("Connexion à anime-sama", AnimeSama::connect) {
         sources.push(Arc::new(s));
     }
     sources
