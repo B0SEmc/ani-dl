@@ -1,4 +1,7 @@
-use super::{Anime, Episode, EpisodeList, Link, Player, Season, Source};
+use super::{
+    Anime, Episode, EpisodeList, Link, Player, Season, Source, absolute, find_live_domain,
+    get_page, host_of, http_client,
+};
 use anyhow::{Context, Result, anyhow, bail};
 use regex::Regex;
 use reqwest::Url;
@@ -16,11 +19,6 @@ const KNOWN_DOMAINS: &[&str] = &[
     "https://anime-sama.fr",
 ];
 
-const ENV_URL: &str = "ANIME_SAMA_URL";
-
-pub const USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:132.0) Gecko/20100101 Firefox/132.0";
-
 pub struct AnimeSama {
     client: Client,
     base: String,
@@ -28,54 +26,21 @@ pub struct AnimeSama {
 
 impl AnimeSama {
     pub fn connect() -> Result<Self> {
-        let client = Client::builder()
-            .user_agent(USER_AGENT)
-            .cookie_store(true)
-            .timeout(Duration::from_secs(20))
-            .build()?;
-
-        if let Ok(url) = std::env::var(ENV_URL)
-            && !url.trim().is_empty()
-        {
-            let base = url.trim().trim_end_matches('/').to_string();
-            return Ok(Self { client, base });
-        }
-
-        for domain in KNOWN_DOMAINS {
-            let Ok(resp) = client.get(*domain).send() else {
-                continue;
-            };
-            if resp.status().is_success() {
-                let base = resp.url().origin().ascii_serialization();
-                return Ok(Self { client, base });
-            }
-        }
-
-        Err(anyhow!(
-            "Impossible de joindre anime-sama (essayé : {}).\n\
-             Si le site a changé de domaine : {}=https://nouveau-domaine ani-dl",
-            KNOWN_DOMAINS.join(", "),
-            ENV_URL
-        ))
+        let client = http_client()?;
+        let base = find_live_domain(&client, "anime-sama", "ANIME_SAMA_URL", KNOWN_DOMAINS)?;
+        Ok(Self { client, base })
     }
 
     fn get(&self, url: &str, referer: Option<&str>) -> Result<String> {
-        let mut req = self.client.get(url);
-        if let Some(r) = referer {
-            req = req.header("Referer", r);
-        }
-        let resp = req
-            .send()
-            .with_context(|| format!("Requête échouée : {url}"))?;
-        let status = resp.status();
-        if !status.is_success() {
-            bail!("{url} a répondu {status}");
-        }
-        Ok(resp.text()?)
+        get_page(&self.client, url, referer)
     }
 }
 
 impl Source for AnimeSama {
+    fn name(&self) -> &'static str {
+        "Anime-Sama"
+    }
+
     fn search(&self, query: &str) -> Result<Vec<Anime>> {
         let html = self
             .client
@@ -106,7 +71,7 @@ impl Source for AnimeSama {
     fn embed_url(&self, player: &Player) -> Result<String> {
         match &player.link {
             Link::EmbedUrl(url) => Ok(absolute(url)),
-            Link::Id { id, token, referer } => {
+            Link::Id { id, token } => {
                 let mut api = Url::parse(&format!("{}/api/lien.php", self.base))?;
                 api.query_pairs_mut()
                     .append_pair("j", token)
@@ -117,7 +82,7 @@ impl Source for AnimeSama {
                     if attempt > 0 {
                         std::thread::sleep(Duration::from_secs(1));
                     }
-                    let body = match self.get(api.as_str(), Some(referer)) {
+                    let body = match self.get(api.as_str(), Some(&player.referer)) {
                         Ok(b) => b,
                         Err(e) => {
                             last_err = e;
@@ -141,14 +106,6 @@ impl Source for AnimeSama {
                 Err(last_err)
             }
         }
-    }
-}
-
-fn absolute(url: &str) -> String {
-    if let Some(rest) = url.strip_prefix("//") {
-        format!("https://{rest}")
-    } else {
-        url.to_string()
     }
 }
 
@@ -280,16 +237,6 @@ fn host_in(host: &str, set: &HashSet<String>) -> bool {
     (0..parts.len().saturating_sub(1)).any(|i| set.contains(&parts[i..].join(".")))
 }
 
-pub fn host_of(url: &str) -> String {
-    Url::parse(&absolute(url))
-        .ok()
-        .and_then(|u| {
-            u.host_str()
-                .map(|h| h.trim_start_matches("www.").to_string())
-        })
-        .unwrap_or_default()
-}
-
 fn parse_season_page(html: &str, page_url: &str, lang: &str) -> EpisodeList {
     static LANGS: LazyLock<Regex> = LazyLock::new(|| re(r"languesDispo\s*=\s*\[([^\]]*)\]"));
     static TOKEN: LazyLock<Regex> = LazyLock::new(|| re(r#"epsJeton\s*=\s*["']([^"']*)["']"#));
@@ -360,8 +307,8 @@ fn parse_season_page(html: &str, page_url: &str, lang: &str) -> EpisodeList {
                             link: Link::Id {
                                 id: id.to_string(),
                                 token: token.clone(),
-                                referer: page_url.to_string(),
                             },
+                            referer: page_url.to_string(),
                         })
                     } else {
                         let host = host_of(entry);
@@ -371,13 +318,15 @@ fn parse_season_page(html: &str, page_url: &str, lang: &str) -> EpisodeList {
                         Some(Player {
                             host,
                             link: Link::EmbedUrl(entry.to_string()),
+                            referer: page_url.to_string(),
                         })
                     }
                 })
                 .collect();
             Episode {
-                number: i + 1,
+                label: (i + 1).to_string(),
                 players,
+                page: None,
             }
         })
         .collect();
@@ -385,7 +334,6 @@ fn parse_season_page(html: &str, page_url: &str, lang: &str) -> EpisodeList {
     EpisodeList {
         langs,
         lang: lang.to_string(),
-        referer: page_url.to_string(),
         episodes,
     }
 }

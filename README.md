@@ -19,18 +19,22 @@
 
 ## How it works
 
-ani-dl searches [anime-sama](https://anime-sama.to) live: no catalog to download or keep up to date.
-Search for an anime, pick a season and a language (VOSTFR, VF...), then watch with mpv or download with yt-dlp.
-For each episode, ani-dl tries every player the site offers until one works.
+ani-dl searches [anime-sama](https://anime-sama.to) and [voiranime](https://voir-anime.to) live:
+no catalog to download or keep up to date. Results from both sites are listed together, tagged with their site.
+Pick an anime, a season and a language (VOSTFR, VF...), then watch with mpv or download with yt-dlp.
 
-The site changes domain from time to time. ani-dl follows the redirects of its known domains;
+For each episode, ani-dl checks every player the site offers and keeps the best quality it can play,
+stopping as soon as it finds 1080p.
+
+Both sites change domain from time to time. ani-dl follows the redirects of their known domains;
 if none answers, force the new one:
 
 ```bash
 ANIME_SAMA_URL=https://anime-sama.new-domain ani-dl
+VOIRANIME_URL=https://voiranime.new-domain ani-dl
 ```
 
-The scraper lives in `src/sources/anime_sama.rs` (site pages) and `src/hosts.rs` (video hosts).
+The scrapers live in `src/sources/` (one file per site) and `src/hosts.rs` (video hosts).
 
 ## Installation
 

@@ -1,10 +1,11 @@
 // yt-dlp has no extractor for Vidmoly, Uqload or Sendvid: we read their player
 // page ourselves and hand yt-dlp/mpv the stream with the Referer they check.
 
-use crate::sources::anime_sama::{USER_AGENT, host_of};
+use crate::sources::{USER_AGENT, host_of};
 use anyhow::{Result, bail};
 use regex::Regex;
 use reqwest::blocking::Client;
+use std::process::{Command, Stdio};
 use std::sync::LazyLock;
 use std::time::Duration;
 
@@ -12,9 +13,11 @@ use std::time::Duration;
 pub struct Stream {
     pub url: String,
     pub referer: Option<String>,
+    pub height: Option<u32>,
 }
 
 const YTDLP_HOSTS: &[&str] = &[
+    "mail.ru",
     "sibnet.ru",
     "vk.com",
     "vkvideo.ru",
@@ -31,6 +34,7 @@ const SCRAPED_HOSTS: &[&str] = &[
     "vidmoly.biz",
     "vidmoly.me",
     "ansembed.net",
+    "voembed.net",
     "sendvid.com",
     "uqload.vc",
     "uqload.to",
@@ -44,12 +48,10 @@ fn host_matches(host: &str, list: &[&str]) -> bool {
 }
 
 pub fn priority(host: &str) -> u8 {
-    if host_matches(host, SCRAPED_HOSTS) {
+    if host_matches(host, SCRAPED_HOSTS) || host_matches(host, YTDLP_HOSTS) {
         0
-    } else if host_matches(host, YTDLP_HOSTS) {
-        1
     } else {
-        2
+        1
     }
 }
 
@@ -96,6 +98,30 @@ fn origin(url: &str) -> Option<String> {
         .map(|u| format!("{}/", u.origin().ascii_serialization()))
 }
 
+fn hls_max_height(master_url: &str, referer: Option<&str>) -> Option<u32> {
+    static RESOLUTION: LazyLock<Regex> = LazyLock::new(|| re(r"RESOLUTION=\d+x(\d+)"));
+    let mut req = CLIENT.get(master_url);
+    if let Some(r) = referer {
+        req = req.header("Referer", r);
+    }
+    let playlist = req.send().ok()?.error_for_status().ok()?.text().ok()?;
+    RESOLUTION
+        .captures_iter(&playlist)
+        .filter_map(|c| c[1].parse().ok())
+        .max()
+}
+
+fn ytdlp_height(url: &str) -> Result<Option<u32>> {
+    let output = Command::new("yt-dlp")
+        .args(["--no-warnings", "--skip-download", "--print", "height", url])
+        .stderr(Stdio::null())
+        .output()?;
+    if !output.status.success() {
+        bail!("yt-dlp ne trouve pas la vidéo");
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().parse().ok())
+}
+
 pub fn resolve(embed: &str, referer: &str) -> Result<Stream> {
     let host = host_of(embed);
 
@@ -103,6 +129,7 @@ pub fn resolve(embed: &str, referer: &str) -> Result<Stream> {
         return Ok(Stream {
             url: embed.to_string(),
             referer: None,
+            height: ytdlp_height(embed)?,
         });
     }
 
@@ -114,9 +141,16 @@ pub fn resolve(embed: &str, referer: &str) -> Result<Stream> {
     let body = resp.text()?;
 
     if let Some(url) = find_video_url(&body) {
+        let referer = origin(&final_url);
+        let height = if url.contains(".m3u8") {
+            hls_max_height(&url, referer.as_deref())
+        } else {
+            None
+        };
         return Ok(Stream {
             url,
-            referer: origin(&final_url),
+            referer,
+            height,
         });
     }
 
@@ -126,5 +160,6 @@ pub fn resolve(embed: &str, referer: &str) -> Result<Stream> {
     Ok(Stream {
         url: embed.to_string(),
         referer: Some(referer.to_string()),
+        height: None,
     })
 }

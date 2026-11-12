@@ -2,11 +2,12 @@ use colored::Colorize;
 use hosts::Stream;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use inquire::{InquireError, MultiSelect, Select, Text};
-use sources::anime_sama::{AnimeSama, USER_AGENT};
-use sources::{Anime, Episode, EpisodeList, Season, Source};
+use sources::anime_sama::AnimeSama;
+use sources::voir_anime::VoirAnime;
+use sources::{Anime, Episode, EpisodeList, Season, Source, USER_AGENT};
 use spinners::{Spinner, Spinners};
 use std::{
-    fs,
+    fmt, fs,
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -18,6 +19,24 @@ mod hosts;
 mod sources;
 
 const PARALLEL_DOWNLOADS: usize = 6;
+const FULL_HD: u32 = 1080;
+
+#[derive(Clone)]
+struct Hit {
+    source: Arc<dyn Source>,
+    anime: Anime,
+}
+
+impl fmt::Display for Hit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{} {}",
+            self.anime.name,
+            format!("[{}]", self.source.name()).dimmed()
+        )
+    }
+}
 
 fn answer<T>(res: Result<T, InquireError>) -> Option<T> {
     match res {
@@ -76,19 +95,45 @@ fn lang_label(lang: &str) -> String {
     lang.to_uppercase()
 }
 
-fn find_stream(source: &dyn Source, list: &EpisodeList, ep: &Episode) -> anyhow::Result<Stream> {
-    let mut players = ep.players.clone();
+fn with_lang(name: &str, lang: &str) -> String {
+    let tag = format!("({})", lang_label(lang));
+    if name.to_uppercase().contains(&tag) {
+        name.to_string()
+    } else {
+        format!("{name} {tag}")
+    }
+}
+
+fn full_title(anime: &Anime, season: &Season) -> String {
+    if season.name == anime.name {
+        anime.name.clone()
+    } else {
+        format!("{} - {}", anime.name, season.name)
+    }
+}
+
+fn best_stream(source: &dyn Source, ep: &Episode) -> anyhow::Result<Stream> {
+    let mut players = source.players(ep)?;
     players.sort_by_key(|p| hosts::priority(&p.host));
 
+    let mut best: Option<Stream> = None;
     let mut errors = Vec::new();
     for player in &players {
         let res = source
             .embed_url(player)
-            .and_then(|embed| hosts::resolve(&embed, &list.referer));
+            .and_then(|embed| hosts::resolve(&embed, &player.referer));
         match res {
-            Ok(stream) => return Ok(stream),
+            Ok(stream) if stream.height.unwrap_or(0) >= FULL_HD => return Ok(stream),
+            Ok(stream) => {
+                if best.as_ref().is_none_or(|b| stream.height > b.height) {
+                    best = Some(stream);
+                }
+            }
             Err(e) => errors.push(format!("{}: {e:#}", player.host)),
         }
+    }
+    if let Some(stream) = best {
+        return Ok(stream);
     }
     if errors.is_empty() {
         anyhow::bail!("aucun lecteur disponible pour cet épisode");
@@ -105,11 +150,21 @@ fn download(
 ) -> anyhow::Result<()> {
     let anime_name = sanitize(&to_title_case(&anime.name));
     let season_name = sanitize(&season.name);
-    let mut dir_name = season_name.clone();
-    if list.lang != "vostfr" {
-        dir_name = format!("{dir_name} ({})", lang_label(&list.lang));
-    }
-    let season_dir: PathBuf = Path::new(&anime_name).join(&dir_name);
+    let tag_lang = |name: &str| {
+        if list.lang == "vostfr" {
+            name.to_string()
+        } else {
+            with_lang(name, &list.lang)
+        }
+    };
+    let (season_dir, file_prefix) = if season_name.eq_ignore_ascii_case(&anime_name) {
+        (PathBuf::from(tag_lang(&anime_name)), anime_name.clone())
+    } else {
+        (
+            Path::new(&anime_name).join(tag_lang(&season_name)),
+            format!("{anime_name} - {season_name}"),
+        )
+    };
     fs::create_dir_all(&season_dir)?;
 
     let pool = ThreadPool::new(PARALLEL_DOWNLOADS);
@@ -126,25 +181,29 @@ fn download(
         let style = style.clone();
         let output_template = season_dir
             .join(format!(
-                "{anime_name} - {season_name} E{:02}.%(ext)s",
-                index + 1
+                "{file_prefix} E{:0>2}.%(ext)s",
+                list.episodes[index].label
             ))
             .display()
             .to_string();
 
         pool.execute(move || {
             let ep = &list.episodes[index];
-            let label = format!("| Épisode {:02}", ep.number);
+            let label = format!("| Épisode {:0>2}", ep.label);
             let pb = m.add(ProgressBar::new(100));
             pb.set_style(style);
             pb.set_message(format!("{label} | recherche d'un lecteur..."));
 
-            let stream = match find_stream(source.as_ref(), &list, ep) {
+            let stream = match best_stream(source.as_ref(), ep) {
                 Ok(s) => s,
                 Err(e) => {
                     pb.abandon_with_message(format!("{label} | {}", format!("{e:#}").red()));
                     return;
                 }
+            };
+            let label = match stream.height {
+                Some(h) => format!("{label} | {h}p"),
+                None => label,
             };
             pb.set_message(label.clone());
 
@@ -225,10 +284,10 @@ fn episode_labels(list: &EpisodeList) -> Vec<String> {
     list.episodes
         .iter()
         .map(|e| {
-            if e.players.is_empty() {
-                format!("Épisode {} (indisponible)", e.number)
+            if e.is_available() {
+                format!("Épisode {}", e.label)
             } else {
-                format!("Épisode {}", e.number)
+                format!("Épisode {} (indisponible)", e.label)
             }
         })
         .collect()
@@ -243,9 +302,12 @@ fn watch_loop(source: &dyn Source, anime: &Anime, season: &Season, list: &Episod
             .raw_prompt(),
     ) {
         let ep = &list.episodes[choice.index];
-        let msg = format!("Recherche d'un lecteur pour l'épisode {}", ep.number);
-        if let Some(stream) = with_spinner(&msg, || find_stream(source, list, ep)) {
-            let title = format!("{} - {} - Épisode {}", anime.name, season.name, ep.number);
+        let msg = format!("Recherche du meilleur lecteur pour l'épisode {}", ep.label);
+        if let Some(stream) = with_spinner(&msg, || best_stream(source, ep)) {
+            if let Some(h) = stream.height {
+                println!("{}", format!("Qualité : {h}p").cyan());
+            }
+            let title = format!("{} - Épisode {}", full_title(anime, season), ep.label);
             watch(&stream, &title);
             cursor = (choice.index + 1).min(labels.len() - 1);
         } else {
@@ -284,9 +346,8 @@ fn season_menu(source: &Arc<dyn Source>, anime: &Anime, season: &Season) {
         while let Some(action) = answer(
             Select::new(
                 &format!(
-                    "{} ({}) : {} épisodes. Que faire ? (Échap pour retour)",
-                    season.name,
-                    lang_label(&list.lang),
+                    "{} : {} épisodes. Que faire ? (Échap pour retour)",
+                    with_lang(&full_title(anime, season), &list.lang),
                     list.episodes.len()
                 ),
                 vec!["Regarder", "Télécharger"],
@@ -323,11 +384,59 @@ fn season_menu(source: &Arc<dyn Source>, anime: &Anime, season: &Season) {
     }
 }
 
-fn main() {
-    let Some(source) = with_spinner("Connexion à anime-sama", AnimeSama::connect) else {
-        std::process::exit(1);
+fn connect_sources() -> Vec<Arc<dyn Source>> {
+    let mut sources: Vec<Arc<dyn Source>> = Vec::new();
+    if let Some(s) = with_spinner("Connexion à anime-sama", AnimeSama::connect) {
+        sources.push(Arc::new(s));
+    }
+    if let Some(s) = with_spinner("Connexion à voiranime", VoirAnime::connect) {
+        sources.push(Arc::new(s));
+    }
+    sources
+}
+
+fn search_all(sources: &[Arc<dyn Source>], query: &str) -> Vec<Hit> {
+    let mut hits = Vec::new();
+    for source in sources {
+        let msg = format!("Recherche de \"{query}\" sur {}", source.name());
+        if let Some(results) = with_spinner(&msg, || source.search(query)) {
+            hits.extend(results.into_iter().map(|anime| Hit {
+                source: Arc::clone(source),
+                anime,
+            }));
+        }
+    }
+    hits
+}
+
+fn anime_menu(hit: &Hit) {
+    let source = &hit.source;
+    let Some(seasons) = with_spinner("Chargement des saisons...", || source.seasons(&hit.anime))
+    else {
+        return;
     };
-    let source: Arc<dyn Source> = Arc::new(source);
+    match seasons.as_slice() {
+        [] => println!("{}", "Aucune saison disponible pour cet anime.".yellow()),
+        [season] => season_menu(source, &hit.anime, season),
+        _ => {
+            while let Some(season) = answer(
+                Select::new(
+                    "Sélectionnez la saison (Échap pour retour) :",
+                    seasons.clone(),
+                )
+                .prompt(),
+            ) {
+                season_menu(source, &hit.anime, &season);
+            }
+        }
+    }
+}
+
+fn main() {
+    let sources = connect_sources();
+    if sources.is_empty() {
+        std::process::exit(1);
+    }
 
     while let Some(query) = answer(Text::new("Rechercher un anime (Échap pour quitter) :").prompt())
     {
@@ -336,42 +445,16 @@ fn main() {
             continue;
         }
 
-        let Some(results) = with_spinner(&format!("Recherche de \"{query}\""), || {
-            source.search(query)
-        }) else {
-            continue;
-        };
-        if results.is_empty() {
+        let hits = search_all(&sources, query);
+        if hits.is_empty() {
             println!("{}", "Aucun résultat.".yellow());
             continue;
         }
 
-        while let Some(anime) = answer(
-            Select::new(
-                "Sélectionnez un anime (Échap pour retour) :",
-                results.clone(),
-            )
-            .prompt(),
+        while let Some(hit) = answer(
+            Select::new("Sélectionnez un anime (Échap pour retour) :", hits.clone()).prompt(),
         ) {
-            let Some(seasons) =
-                with_spinner("Chargement des saisons...", || source.seasons(&anime))
-            else {
-                continue;
-            };
-            if seasons.is_empty() {
-                println!("{}", "Aucune saison disponible pour cet anime.".yellow());
-                continue;
-            }
-
-            while let Some(season) = answer(
-                Select::new(
-                    "Sélectionnez la saison (Échap pour retour) :",
-                    seasons.clone(),
-                )
-                .prompt(),
-            ) {
-                season_menu(&source, &anime, &season);
-            }
+            anime_menu(&hit);
         }
     }
 }
