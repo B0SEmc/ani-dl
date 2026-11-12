@@ -1,5 +1,6 @@
-// yt-dlp has no extractor for Vidmoly, Uqload or Sendvid: we read their player
-// page ourselves and hand yt-dlp/mpv the stream with the Referer they check.
+// yt-dlp has no extractor for Vidmoly, Uqload, Sendvid or Streamtape: we read
+// their player page ourselves and hand yt-dlp/mpv the stream with the Referer
+// they check.
 
 use crate::sources::{Episode, Source, USER_AGENT, host_of};
 use anyhow::{Result, bail};
@@ -44,13 +45,25 @@ const SCRAPED_HOSTS: &[&str] = &[
     "uqload.com",
 ];
 
+const STREAMTAPE_HOSTS: &[&str] = &[
+    "streamtape.com",
+    "streamtape.net",
+    "streamtape.to",
+    "streamtape.xyz",
+    "streamta.pe",
+    "strtape.cloud",
+];
+
 fn host_matches(host: &str, list: &[&str]) -> bool {
     list.iter()
         .any(|d| host == *d || host.ends_with(&format!(".{d}")))
 }
 
 fn priority(host: &str) -> u8 {
-    if host_matches(host, SCRAPED_HOSTS) || host_matches(host, YTDLP_HOSTS) {
+    if [SCRAPED_HOSTS, STREAMTAPE_HOSTS, YTDLP_HOSTS]
+        .iter()
+        .any(|list| host_matches(host, list))
+    {
         0
     } else {
         1
@@ -113,6 +126,45 @@ fn hls_max_height(master_url: &str, referer: Option<&str>) -> Option<u32> {
         .max()
 }
 
+fn mp4_height(url: &str, referer: Option<&str>) -> Option<u32> {
+    let mut req = CLIENT.get(url).header("Range", "bytes=0-65535");
+    if let Some(r) = referer {
+        req = req.header("Referer", r);
+    }
+    let head = req.send().ok()?.error_for_status().ok()?.bytes().ok()?;
+    track_heights(&head).max()
+}
+
+fn track_heights(mp4: &[u8]) -> impl Iterator<Item = u32> + '_ {
+    mp4.windows(4)
+        .enumerate()
+        .filter(|(_, name)| *name == b"tkhd")
+        .filter_map(|(at, _)| {
+            let start = at.checked_sub(4)?;
+            let size = u32::from_be_bytes(mp4.get(start..at)?.try_into().ok()?) as usize;
+            let end = start + size;
+            let height = u32::from_be_bytes(mp4.get(end.checked_sub(4)?..end)?.try_into().ok()?);
+            Some(height >> 16).filter(|h| *h > 0)
+        })
+}
+
+fn streamtape_url(page: &str) -> Option<String> {
+    static LINK: LazyLock<Regex> = LazyLock::new(|| {
+        re(
+            r#"getElementById\(['"](bot|robot)link['"]\)\.innerHTML\s*=\s*['"]([^'"]*)['"]\s*\+\s*(?:''\s*\+\s*)?\(['"]([^'"]*)['"]\)((?:\.substring\(\d+\))*)"#,
+        )
+    });
+    static SKIP: LazyLock<Regex> = LazyLock::new(|| re(r"\d+"));
+
+    let link = LINK.captures_iter(page).max_by_key(|c| &c[1] == "bot")?;
+    let skipped: usize = SKIP
+        .find_iter(&link[4])
+        .filter_map(|n| n.as_str().parse::<usize>().ok())
+        .sum();
+    let tail: String = link[3].chars().skip(skipped).collect();
+    Some(format!("https:{}{tail}&stream=1", &link[2]))
+}
+
 fn ytdlp_height(url: &str) -> Result<Option<u32>> {
     let output = Command::new("yt-dlp")
         .args(["--no-warnings", "--skip-download", "--print", "height", url])
@@ -142,12 +194,18 @@ pub fn resolve(embed: &str, referer: &str) -> Result<Stream> {
     let final_url = resp.url().to_string();
     let body = resp.text()?;
 
-    if let Some(url) = find_video_url(&body) {
+    let video_url = if host_matches(&host, STREAMTAPE_HOSTS) {
+        streamtape_url(&body)
+    } else {
+        find_video_url(&body)
+    };
+
+    if let Some(url) = video_url {
         let referer = origin(&final_url);
         let height = if url.contains(".m3u8") {
             hls_max_height(&url, referer.as_deref())
         } else {
-            None
+            mp4_height(&url, referer.as_deref())
         };
         return Ok(Stream {
             url,
@@ -156,7 +214,7 @@ pub fn resolve(embed: &str, referer: &str) -> Result<Stream> {
         });
     }
 
-    if host_matches(&host, SCRAPED_HOSTS) {
+    if host_matches(&host, SCRAPED_HOSTS) || host_matches(&host, STREAMTAPE_HOSTS) {
         bail!("vidéo introuvable sur {host} (supprimée ?)");
     }
     Ok(Stream {
