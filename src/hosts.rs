@@ -1,13 +1,15 @@
 // yt-dlp has no extractor for Vidmoly, Uqload or Sendvid: we read their player
 // page ourselves and hand yt-dlp/mpv the stream with the Referer they check.
 
-use crate::sources::{USER_AGENT, host_of};
+use crate::sources::{Episode, Source, USER_AGENT, host_of};
 use anyhow::{Result, bail};
 use regex::Regex;
 use reqwest::blocking::Client;
 use std::process::{Command, Stdio};
 use std::sync::LazyLock;
 use std::time::Duration;
+
+const FULL_HD: u32 = 1080;
 
 #[derive(Debug, Clone)]
 pub struct Stream {
@@ -47,7 +49,7 @@ fn host_matches(host: &str, list: &[&str]) -> bool {
         .any(|d| host == *d || host.ends_with(&format!(".{d}")))
 }
 
-pub fn priority(host: &str) -> u8 {
+fn priority(host: &str) -> u8 {
     if host_matches(host, SCRAPED_HOSTS) || host_matches(host, YTDLP_HOSTS) {
         0
     } else {
@@ -162,4 +164,31 @@ pub fn resolve(embed: &str, referer: &str) -> Result<Stream> {
         referer: Some(referer.to_string()),
         height: None,
     })
+}
+
+pub fn best_stream(source: &dyn Source, episode: &Episode) -> Result<Stream> {
+    let mut players = source.players(episode)?;
+    players.sort_by_key(|p| priority(&p.host));
+
+    let mut best: Option<Stream> = None;
+    let mut errors = Vec::new();
+    for player in &players {
+        let stream = source
+            .embed_url(player)
+            .and_then(|embed| resolve(&embed, &player.referer));
+        match stream {
+            Ok(stream) if stream.height.unwrap_or(0) >= FULL_HD => return Ok(stream),
+            Ok(stream) if best.as_ref().is_none_or(|b| stream.height > b.height) => {
+                best = Some(stream)
+            }
+            Ok(_) => {}
+            Err(e) => errors.push(format!("{}: {e:#}", player.host)),
+        }
+    }
+
+    match best {
+        Some(stream) => Ok(stream),
+        None if errors.is_empty() => bail!("aucun lecteur disponible pour cet épisode"),
+        None => bail!("aucun lecteur ne fonctionne ({})", errors.join(" ; ")),
+    }
 }
