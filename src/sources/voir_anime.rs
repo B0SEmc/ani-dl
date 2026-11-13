@@ -10,7 +10,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 
-const KNOWN_DOMAINS: &[&str] = &["https://voir-anime.to"];
+const KNOWN_DOMAINS: &[&str] = &["https://voiranime.cx", "https://voir-anime.to"];
 
 pub struct VoirAnime {
     client: Client,

@@ -19,7 +19,7 @@
 
 ## How it works
 
-ani-dl searches [voiranime](https://voir-anime.to) and [anime-sama](https://anime-sama.to) live:
+ani-dl searches [voiranime](https://voiranime.cx) and [anime-sama](https://anime-sama.to) live:
 no catalog to download or keep up to date. Results from both sites are listed together, tagged with their site,
 voiranime first as it usually has the better quality.
 Pick an anime, a season and a language (VOSTFR, VF...), then watch with mpv or download with yt-dlp.

@@ -33,7 +33,7 @@ This project has no control on the content it is serving, using copyrighted cont
 A browser is a tool, and the maliciousness of the tool is directly based on the user.
 </b>
 
-This project uses client-side content access mechanisms. Hence, the copyright infrigements or DMCA in this project's regards are to be forwarded to the associated sites by the associated notifier of any such claims. As of writing this is [[anime-sama](https://anime-sama.fr/)] and [[voir-anime](https://voir-anime.to/)]
+This project uses client-side content access mechanisms. Hence, the copyright infrigements or DMCA in this project's regards are to be forwarded to the associated sites by the associated notifier of any such claims. As of writing this is [[anime-sama](https://anime-sama.fr/)] and [[voiranime](https://voiranime.cx/)]
 <b> Do not harass the maintainer. </b>
 
 <h2>
