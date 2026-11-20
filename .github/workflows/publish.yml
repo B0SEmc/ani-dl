@@ -1,10 +1,10 @@
 name: Publish to crates.io
 
-# Publishes automatically when a version bump in Cargo.toml lands on main.
+# Publishes automatically when a version bump in Cargo.toml lands on master.
 # Does nothing if that version is already on crates.io.
 on:
   push:
-    branches: [main]
+    branches: [master]
     paths: [Cargo.toml]
   workflow_dispatch:
 
